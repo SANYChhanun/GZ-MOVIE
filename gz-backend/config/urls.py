@@ -1,6 +1,9 @@
-﻿from django.contrib import admin
+﻿from django.conf import settings
+from django.conf.urls.static import static
+from django.contrib import admin
 from django.urls import path, include
 from django.http import JsonResponse
+
 
 def api_root(request):
     return JsonResponse({
@@ -8,12 +11,75 @@ def api_root(request):
         "version": "1.0",
         "endpoints": {
             "auth": "/api/auth/",
-            "admin": "/admin/",
+            "movies": "/api/movies/",
+            "admin_api": "/api/admin/",
+            "django_admin": "/admin/",
         }
     })
 
+
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('api/', api_root, name='api-root'),
-    path('api/auth/', include('apps.accounts.urls')),
+    # Django Admin
+    path(
+        "admin/",
+        admin.site.urls
+    ),
+
+    # API Root
+    path(
+        "api/",
+        api_root,
+        name="api-root"
+    ),
+
+    # Authentication
+    path(
+        "api/auth/",
+        include("apps.accounts.urls")
+    ),
+
+    # Public Movie API
+    path(
+        "api/movies/",
+        include("apps.movies.urls")
+    ),
+
+    # Admin Movie Management API
+    path(
+        "api/admin/",
+        include("apps.movies.admin_urls")
+    ),
+    path(
+        "api/admin/",
+        include("apps.content.admin_urls")
+    ),
+
+    # Other APIs
+    path(
+        "api/payments/",
+        include("apps.payments.urls")
+    ),
+
+    path(
+        "api/membership/",
+        include("apps.membership.urls")
+    ),
+
+    path(
+        "api/purchases/",
+        include("apps.purchases.urls")
+    ),
+
+    path(
+        "api/content/",
+        include("apps.content.urls")
+    ),
 ]
+
+
+# Serve uploaded media files in development
+if settings.DEBUG:
+    urlpatterns += static(
+        settings.MEDIA_URL,
+        document_root=settings.MEDIA_ROOT
+    )

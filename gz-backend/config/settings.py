@@ -39,12 +39,18 @@ INSTALLED_APPS = [
 
     # --- Local apps (បន្ថែមនៅទីនេះម្តងមួយៗ តាមដែលបង្កើតនៅ Phase បន្ទាប់) ---
     "apps.accounts",
-    # "apps.movies",
-    # "apps.streaming",
-    # "apps.wallet",
-    # "apps.payments",
-    # "apps.membership",
-    # "apps.purchases",
+    "apps.movies",
+    "apps.streaming",
+    "apps.wallet",
+    "apps.payments",
+    "apps.membership",
+    "apps.purchases",
+    "apps.notifications",
+    # "apps.dashboard",
+    "apps.support",
+    "apps.content",
+    "common",
+    
 ]
 
 # Custom User Model — ត្រូវកំណត់ត្រង់នេះមុននឹង migrate លើកដំបូង
@@ -60,6 +66,9 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+
+    'common.middleware.RequestLoggingMiddleware',
+    'django.middleware.security.SecurityMiddleware',
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -126,7 +135,7 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 
-MEDIA_URL = "media/"
+MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -146,6 +155,10 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
+    # ------------------------
+    'EXCEPTION_HANDLER': 'common.exceptions.custom_exception_handler',
+    'DEFAULT_PAGINATION_CLASS': 'common.pagination.StandardResultsSetPagination',
+    
 }
 
 # --- Simple JWT ---
@@ -166,3 +179,37 @@ CORS_ALLOWED_ORIGINS = os.getenv(
     "CORS_ALLOWED_ORIGINS", "http://localhost:5173"
 ).split(",")
 CORS_ALLOW_CREDENTIALS = True
+
+#=========================================================
+
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'verbose': {
+            'format': '{levelname} {asctime} {module} {message}',
+            'style': '{',
+        },
+        'simple': {
+            'format': '{levelname} {message}',
+            'style': '{',
+        },
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'simple',
+        },
+    },
+    'loggers': {
+        'request.middleware': {
+            'handlers': ['console'],
+            'level': 'INFO',
+            'propagate': False,
+        },
+        'django': {
+            'handlers': ['console'],
+            'level': 'INFO',
+        },
+    },
+}

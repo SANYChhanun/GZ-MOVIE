@@ -6,13 +6,12 @@ const useAuthStore = create((set, get) => ({
   isAuthenticated: false,
   isLoading: false,
   error: null,
-  accessToken: localStorage.getItem('accessToken'),
-  refreshToken: localStorage.getItem('refreshToken'),
+  accessToken: localStorage.getItem('gz_access_token'),
+  refreshToken: localStorage.getItem('gz_refresh_token'),
 
   login: async (credentials) => {
     set({ isLoading: true, error: null });
     try {
-      // Django ត្រូវការ username
       const loginData = {
         username: credentials.username || credentials.email,
         password: credentials.password,
@@ -24,8 +23,8 @@ const useAuthStore = create((set, get) => ({
       
       const { access, refresh, user } = response.data;
       
-      localStorage.setItem('accessToken', access);
-      localStorage.setItem('refreshToken', refresh);
+      localStorage.setItem('gz_access_token', access);
+      localStorage.setItem('gz_refresh_token', refresh);
       
       set({ 
         user, 
@@ -53,7 +52,6 @@ const useAuthStore = create((set, get) => ({
       const registerResponse = await authApi.register(userData);
       console.log('Register response:', registerResponse.data);
       
-      // Auto-login after registration
       const loginResponse = await authApi.login({
         username: userData.username,
         password: userData.password,
@@ -61,8 +59,8 @@ const useAuthStore = create((set, get) => ({
       
       const { access, refresh, user } = loginResponse.data;
       
-      localStorage.setItem('accessToken', access);
-      localStorage.setItem('refreshToken', refresh);
+      localStorage.setItem('gz_access_token', access);
+      localStorage.setItem('gz_refresh_token', refresh);
       
       set({ 
         user, 
@@ -92,14 +90,14 @@ const useAuthStore = create((set, get) => ({
     } catch (error) {
       console.log('Logout error:', error);
     } finally {
-      localStorage.removeItem('accessToken');
-      localStorage.removeItem('refreshToken');
+      localStorage.removeItem('gz_access_token');
+      localStorage.removeItem('gz_refresh_token');
       set({ user: null, isAuthenticated: false, accessToken: null, refreshToken: null });
     }
   },
 
   checkAuth: async () => {
-    const accessToken = localStorage.getItem('accessToken');
+    const accessToken = localStorage.getItem('gz_access_token');
     if (!accessToken) {
       set({ isAuthenticated: false });
       return;
@@ -111,23 +109,23 @@ const useAuthStore = create((set, get) => ({
       set({ user: response.data, isAuthenticated: true, isLoading: false });
     } catch (error) {
       if (error.response?.status === 401) {
-        const refreshToken = localStorage.getItem('refreshToken');
+        const refreshToken = localStorage.getItem('gz_refresh_token');
         if (refreshToken) {
           try {
             const refreshResponse = await authApi.refreshToken(refreshToken);
             const newAccessToken = refreshResponse.data.access;
-            localStorage.setItem('accessToken', newAccessToken);
+            localStorage.setItem('gz_access_token', newAccessToken);
             set({ accessToken: newAccessToken });
             
             const profileResponse = await authApi.getProfile();
             set({ user: profileResponse.data, isAuthenticated: true, isLoading: false });
           } catch (refreshError) {
-            localStorage.removeItem('accessToken');
-            localStorage.removeItem('refreshToken');
+            localStorage.removeItem('gz_access_token');
+            localStorage.removeItem('gz_refresh_token');
             set({ user: null, isAuthenticated: false, isLoading: false, accessToken: null, refreshToken: null });
           }
         } else {
-          localStorage.removeItem('accessToken');
+          localStorage.removeItem('gz_access_token');
           set({ user: null, isAuthenticated: false, isLoading: false, accessToken: null });
         }
       } else {
