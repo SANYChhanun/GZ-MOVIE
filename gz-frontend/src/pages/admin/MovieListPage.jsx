@@ -15,6 +15,36 @@ const accessDisplay = (type) => {
   return map[type] || type;
 };
 
+// Handles categories coming back as [{id,name}], [name, ...], or [id, ...]
+const formatCategories = (categories) => {
+  if (!Array.isArray(categories) || categories.length === 0) return "—";
+  return categories
+    .map((c) => (c && typeof c === "object" ? c.name : c))
+    .filter(Boolean)
+    .join(", ");
+};
+
+// Small poster thumbnail with graceful fallback if the image fails/doesn't exist
+function MoviePosterThumb({ src, alt }) {
+  const [failed, setFailed] = useState(false);
+  const showImage = Boolean(src) && !failed;
+
+  return (
+    <div className="w-8 h-11 rounded overflow-hidden bg-gradient-to-br from-amber-500/25 to-slate-800 flex items-center justify-center border border-slate-700 shrink-0">
+      {showImage ? (
+        <img
+          src={src}
+          alt={alt}
+          className="w-full h-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <Film size={13} className="text-amber-400" />
+      )}
+    </div>
+  );
+}
+
 const PAGE_SIZE = 10;   // adjust as needed
 
 export default function MovieListPage() {
@@ -178,14 +208,12 @@ export default function MovieListPage() {
         empty="No movies match your criteria."
         rows={movies.map((m) => [
           <div key={m.id} className="flex items-center gap-3">
-            <div className="w-8 h-11 rounded bg-gradient-to-br from-amber-500/25 to-slate-800 flex items-center justify-center border border-slate-700 shrink-0">
-              <Film size={13} className="text-amber-400" />
-            </div>
+            <MoviePosterThumb src={m.poster} alt={m.title} />
             <span className="font-medium text-slate-100">{m.title}</span>
           </div>,
-          // If categories is an array of objects, join names
-          m.categories?.map(c => c.name).join(", ") || "—",
+          formatCategories(m.categories),
           <Badge tone={accessTone(m.access_type)} key={`acc-${m.id}`}>{accessDisplay(m.access_type)}</Badge>,
+          
           <Badge tone={statusTone(m.is_active ? "Active" : "Inactive")} key={`stat-${m.id}`}>
             {m.is_active ? "Active" : "Inactive"}
           </Badge>,

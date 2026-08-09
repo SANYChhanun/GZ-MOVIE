@@ -2,6 +2,7 @@
 from rest_framework import serializers
 from .models import Movie, Episode, Genre, Category, Cast, Crew
 from django.utils import timezone
+from django.utils.text import slugify
 
 
 class GenreSerializer(serializers.ModelSerializer):
@@ -49,6 +50,43 @@ class MovieListSerializer(serializers.ModelSerializer):
             'rating', 'is_featured', 'is_new_release',
             'genres', 'categories',
         ]
+
+
+class MovieAdminSerializer(serializers.ModelSerializer):
+    """Writable serializer for the admin movie form."""
+    synopsis = serializers.CharField(source='description', required=False, default='', allow_blank=True)
+    release_date = serializers.DateField(required=False, default=timezone.localdate)
+    duration_minutes = serializers.IntegerField(source='duration', required=False, default=0)
+    country = serializers.CharField(required=False, default='Unknown')
+    language = serializers.CharField(required=False, default='Unknown')
+    genres = serializers.PrimaryKeyRelatedField(queryset=Genre.objects.all(), many=True, required=False)
+    categories = CategorySerializer(many=True, read_only=True)
+    # field សម្រាប់ save ពេល create/edit (ផ្ញើ id list ចូល)
+    category_ids = serializers.PrimaryKeyRelatedField(
+        source="categories", queryset=Category.objects.all(),
+        many=True, write_only=True, required=False,
+    )
+
+    class Meta:
+        model = Movie
+        fields = [
+            'id', 'title', 'synopsis', 'release_date', 'duration_minutes',
+            'rating', 'access_type', 'is_active', 'poster', 'video_file',
+            'country', 'language', 'genres', 'categories', 'category_ids',
+        ]
+
+    def create(self, validated_data):
+        validated_data['slug'] = self._unique_slug(validated_data['title'])
+        return super().create(validated_data)
+
+    def _unique_slug(self, title):
+        base_slug = slugify(title) or 'movie'
+        candidate = base_slug
+        suffix = 2
+        while Movie.objects.filter(slug=candidate).exists():
+            candidate = f'{base_slug}-{suffix}'
+            suffix += 1
+        return candidate
 
 
 class MovieDetailSerializer(serializers.ModelSerializer):
