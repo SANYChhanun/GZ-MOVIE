@@ -1,26 +1,30 @@
-﻿# accounts/admin.py
+﻿# apps/accounts/admin.py
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-
-from .models import User, Device
+from .models import User, Subscription, Device
 
 
 @admin.register(User)
 class CustomUserAdmin(UserAdmin):
-    list_display = ["username", "email", "phone", "is_vip", "vip_expiration_date", "is_staff"]
-    list_filter = ["is_vip", "is_staff", "is_active"]
-    search_fields = ["username", "email", "phone"]
-
+    list_display = ('username', 'email', 'role', 'phone', 'is_active', 'date_joined')
+    list_filter = ('role', 'is_active', 'is_phone_verified')
+    search_fields = ('username', 'email', 'phone')
+    
     fieldsets = UserAdmin.fieldsets + (
-        ("GZ Profile", {
-            "fields": ("phone", "avatar", "is_vip", "vip_expiration_date",
-                       "is_phone_verified", "is_email_verified"),
+        ('Additional Information', {
+            'fields': ('role', 'phone', 'avatar', 'is_phone_verified', 'is_email_verified')
         }),
     )
 
 
+@admin.register(Subscription)
+class SubscriptionAdmin(admin.ModelAdmin):
+    list_display = ('user', 'duration_days', 'start_date', 'expires_at', 'is_active')
+    list_filter = ('is_active', 'duration_days')
+    search_fields = ('user__username', 'user__email')
+
+
 @admin.register(Device)
 class DeviceAdmin(admin.ModelAdmin):
-    list_display = ["user", "device_name", "device_id", "is_active", "last_login_at"]
-    list_filter = ["is_active"]
-    search_fields = ["user__username", "device_id"]
+    list_display = ('user', 'device_name', 'device_id', 'last_login_at', 'is_active')
+    search_fields = ('user__username', 'device_id')

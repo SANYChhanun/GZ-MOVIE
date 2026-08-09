@@ -1,27 +1,21 @@
-﻿from django.urls import path
+﻿# apps/accounts/urls.py
+from django.urls import path
 from rest_framework_simplejwt.views import TokenRefreshView
-
-from .views import (
-    RegisterView,
-    LoginView,
-    LogoutView,
-    ProfileView,
-    ChangePasswordView,
-    ForgotPasswordView,
-    ResetPasswordView,
-    DeviceListView,
-    DeviceRevokeView,
-)
+from . import views
 
 urlpatterns = [
-    path("register/", RegisterView.as_view(), name="auth-register"),
-    path("login/", LoginView.as_view(), name="auth-login"),
-    path("refresh/", TokenRefreshView.as_view(), name="auth-refresh"),
-    path("logout/", LogoutView.as_view(), name="auth-logout"),
-    path("profile/", ProfileView.as_view(), name="auth-profile"),
-    path("change-password/", ChangePasswordView.as_view(), name="auth-change-password"),
-    path("forgot-password/", ForgotPasswordView.as_view(), name="auth-forgot-password"),
-    path("reset-password/", ResetPasswordView.as_view(), name="auth-reset-password"),
-    path("devices/", DeviceListView.as_view(), name="auth-devices"),
-    path("devices/<int:pk>/", DeviceRevokeView.as_view(), name="auth-device-revoke"),
+    # Authentication
+    path('login/', views.CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('register/', views.RegisterView.as_view(), name='register'),
+    
+    # User Profile
+    path('profile/', views.UserProfileView.as_view(), name='user_profile'),
+    path('check-vip/', views.CheckVIPStatusView.as_view(), name='check_vip'),
+]
+
+# Admin only endpoints
+urlpatterns += [
+    path('admin/users/', views.UserListView.as_view(), name='admin_users'),
+    path('admin/users/<int:pk>/role/', views.UserRoleUpdateView.as_view(), name='admin_user_role'),
 ]

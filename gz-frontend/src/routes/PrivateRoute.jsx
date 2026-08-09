@@ -1,24 +1,43 @@
-﻿import { useEffect } from 'react';
+﻿// src/routes/PrivateRoute.jsx
 import { Navigate } from 'react-router-dom';
-import useAuthStore from '../store/authStore';
+import { useAuth } from '../contexts/AuthContext';
 
-const PrivateRoute = ({ children }) => {
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  const checkAuth = useAuthStore((state) => state.checkAuth);
+export default function PrivateRoute({ children }) {
+  const { isAuthenticated, loading } = useAuth();
 
-  useEffect(() => {
-    // Always verify auth on mount (or when token might have changed)
-    checkAuth();
-  }, [checkAuth]);
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <p className="text-white text-lg">Loading...</p>
+      </div>
+    );
+  }
 
-  // While checking, show a loading indicator (optional)
   if (!isAuthenticated) {
-    // If checkAuth determined there is no valid token, redirect
-    // (checkAuth already removes invalid tokens and sets isAuthenticated=false)
     return <Navigate to="/login" replace />;
   }
 
   return children;
-};
+}
 
-export default PrivateRoute;
+export function AdminRoute({ children }) {
+  const { isAuthenticated, loading, isAdmin } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
+        <p className="text-white text-lg">Loading...</p>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (!isAdmin) {
+    return <Navigate to="/home" replace />;
+  }
+
+  return children;
+}

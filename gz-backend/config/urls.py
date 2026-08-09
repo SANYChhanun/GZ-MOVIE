@@ -80,6 +80,7 @@ urlpatterns = [
         "api/content/",
         include("apps.content.urls")
     ),
+     path('api/auth/', include('apps.accounts.urls')),
 ]
 
 

@@ -1,10 +1,11 @@
-﻿import axios from "axios";
+﻿// src/api/axiosClient.js
+import axios from "axios";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000/api";
 
 const axiosClient = axios.create({
   baseURL: API_BASE_URL,
-  headers: { "Content-Type": "multipart/form-data" },
+  headers: { "Content-Type": "application/json" },  // កែនៅទីនេះ!
 });
 
 // Attach access token to every request
@@ -13,6 +14,12 @@ axiosClient.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  
+  // បើទិន្នន័យជា FormData កុំកំណត់ Content-Type (ទុកឱ្យ browser កំណត់ដោយស្វ័យប្រវត្តិ)
+  if (config.data instanceof FormData) {
+    delete config.headers['Content-Type'];
+  }
+  
   return config;
 });
 

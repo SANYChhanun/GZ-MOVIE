@@ -1,133 +1,82 @@
-﻿from django.contrib.auth import get_user_model
-from django.contrib.auth.tokens import default_token_generator
-from django.core.mail import send_mail
-from django.utils.encoding import force_bytes
-from django.utils.http import urlsafe_base64_encode
+﻿# apps/accounts/views.py
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
-from rest_framework_simplejwt.tokens import RefreshToken
-
-from .models import Device
+from django.contrib.auth import get_user_model
+from django.utils import timezone
 from .serializers import (
-    RegisterSerializer,
-    UserSerializer,
-    UpdateProfileSerializer,
-    ChangePasswordSerializer,
-    CustomTokenObtainPairSerializer,
-    ForgotPasswordSerializer,
-    ResetPasswordSerializer,
-    DeviceSerializer,
+    UserSerializer, 
+    CustomTokenObtainPairSerializer, 
+    UserProfileSerializer
 )
+from .permissions import IsAdminUser
 
 User = get_user_model()
 
 
-class RegisterView(generics.CreateAPIView):
-    queryset = User.objects.all()
-    serializer_class = RegisterSerializer
-    permission_classes = [permissions.AllowAny]
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.save()
-        return Response(
-            {"message": "Registered successfully.", "user": UserSerializer(user).data},
-            status=status.HTTP_201_CREATED,
-        )
-
-
-class LoginView(TokenObtainPairView):
+class CustomTokenObtainPairView(TokenObtainPairView):
+    """Login endpoint that returns JWT with role and VIP info"""
     serializer_class = CustomTokenObtainPairSerializer
-    permission_classes = [permissions.AllowAny]
 
 
-class LogoutView(APIView):
+class UserProfileView(generics.RetrieveUpdateAPIView):
+    """Get/Update current user profile"""
+    serializer_class = UserProfileSerializer
     permission_classes = [permissions.IsAuthenticated]
-
-    def post(self, request):
-        try:
-            refresh_token = request.data["refresh"]
-            token = RefreshToken(refresh_token)
-            token.blacklist()
-            return Response({"message": "Logged out."}, status=status.HTTP_205_RESET_CONTENT)
-        except Exception:
-            return Response({"error": "Invalid refresh token."}, status=status.HTTP_400_BAD_REQUEST)
-
-
-class ProfileView(generics.RetrieveUpdateAPIView):
-    permission_classes = [permissions.IsAuthenticated]
-
+    
     def get_object(self):
         return self.request.user
 
-    def get_serializer_class(self):
-        if self.request.method in ["PUT", "PATCH"]:
-            return UpdateProfileSerializer
-        return UserSerializer
+
+class UserListView(generics.ListAPIView):
+    """Admin only: List all users"""
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAdminUser]
 
 
-class ChangePasswordView(APIView):
+class CheckVIPStatusView(APIView):
+    """Check if current user has VIP status"""
     permission_classes = [permissions.IsAuthenticated]
-
-    def post(self, request):
-        serializer = ChangePasswordSerializer(data=request.data, context={"request": request})
-        serializer.is_valid(raise_exception=True)
+    
+    def get(self, request):
         user = request.user
-        user.set_password(serializer.validated_data["new_password"])
-        user.save()
-        return Response({"message": "Password changed successfully."})
+        is_vip = user.has_active_subscription()
+        
+        response_data = {
+            'is_vip': is_vip,
+            'role': user.role,
+        }
+        
+        if is_vip:
+            active_sub = user.subscriptions.filter(
+                is_active=True,
+                expires_at__gt=timezone.now()
+            ).first()
+            response_data['subscription'] = {
+                'expires_at': active_sub.expires_at,
+                'days_remaining': (active_sub.expires_at - timezone.now()).days
+            }
+        
+        return Response(response_data)
 
 
-class ForgotPasswordView(APIView):
+class RegisterView(generics.CreateAPIView):
+    """Register new user"""
+    queryset = User.objects.all()
     permission_classes = [permissions.AllowAny]
-
-    def post(self, request):
-        serializer = ForgotPasswordSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        email = serializer.validated_data["email"]
-
-        user = User.objects.filter(email=email).first()
-        if user:
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-            token = default_token_generator.make_token(user)
-            reset_link = f"http://localhost:5173/reset-password?uid={uid}&token={token}"
-            send_mail(
-                subject="GZ Web Movie - Reset your password",
-                message=f"Click the link below to reset your password:\n{reset_link}",
-                from_email=None,
-                recipient_list=[email],
-                fail_silently=True,
-            )
-
-        return Response({"message": "If this email exists in our system, a reset link has been sent."})
-
-
-class ResetPasswordView(APIView):
-    permission_classes = [permissions.AllowAny]
-
-    def post(self, request):
-        serializer = ResetPasswordSerializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.validated_data["user"]
-        user.set_password(serializer.validated_data["new_password"])
+    serializer_class = UserSerializer
+    
+    def perform_create(self, serializer):
+        user = serializer.save()
+        user.set_password(self.request.data.get('password'))
         user.save()
-        return Response({"message": "Password reset successfully."})
 
 
-class DeviceListView(generics.ListAPIView):
-    serializer_class = DeviceSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        return Device.objects.filter(user=self.request.user).order_by("-last_login_at")
-
-
-class DeviceRevokeView(generics.DestroyAPIView):
-    serializer_class = DeviceSerializer
-    permission_classes = [permissions.IsAuthenticated]
-
-    def get_queryset(self):
-        return Device.objects.filter(user=self.request.user)
+class UserRoleUpdateView(generics.UpdateAPIView):
+    """Admin only: Update user role"""
+    queryset = User.objects.all()
+    serializer_class = UserSerializer
+    permission_classes = [IsAdminUser]  # កែត្រង់នេះ
+    lookup_field = 'pk'

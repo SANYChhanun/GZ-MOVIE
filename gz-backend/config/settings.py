@@ -37,24 +37,24 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_filters",
 
-    # --- Local apps (បន្ថែមនៅទីនេះម្តងមួយៗ តាមដែលបង្កើតនៅ Phase បន្ទាប់) ---
+    # Local apps - ទុកតែ apps ដែលមានកូដពេញលេញ
     "apps.accounts",
     "apps.movies",
+    "common",
+    
+    # បើក apps ទាំងអស់ដែលមាន models
+    "apps.content",
     "apps.streaming",
     "apps.wallet",
     "apps.payments",
     "apps.membership",
     "apps.purchases",
     "apps.notifications",
-    # "apps.dashboard",
     "apps.support",
-    "apps.content",
-    "common",
-    
 ]
 
 # Custom User Model — ត្រូវកំណត់ត្រង់នេះមុននឹង migrate លើកដំបូង
-AUTH_USER_MODEL = "accounts.User"
+AUTH_USER_MODEL = 'accounts.User'
 
 
 MIDDLEWARE = [

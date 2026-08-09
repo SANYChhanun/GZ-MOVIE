@@ -1,11 +1,14 @@
-﻿import { RouterProvider } from 'react-router-dom';
+﻿// src/App.jsx
+import { RouterProvider } from 'react-router-dom';
+import { AuthProvider } from './contexts/AuthContext';
 import { router } from './router';
 
 function App() {
-  // Don't auto-check auth on app start
-  // User will be redirected to login if they try to access protected routes
-  
-  return <RouterProvider router={router} />;
+  return (
+    <AuthProvider>
+      <RouterProvider router={router} />
+    </AuthProvider>
+  );
 }
 
 export default App;

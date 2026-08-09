@@ -1,67 +1,110 @@
-﻿import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import useAuthStore from '../store/authStore';
+﻿// src/pages/LoginPage.jsx
+import { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext';
 
-const LoginPage = () => {
+export default function LoginPage() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
-  const { login, isLoading, error } = useAuthStore();
+  const [localError, setLocalError] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  const { login } = useAuth();
   const navigate = useNavigate();
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const success = await login({ username, password });
-    if (success) {
-      navigate('/admin');
+    setLocalError('');
+    setIsSubmitting(true);
+
+    const result = await login(username, password);
+    setIsSubmitting(false);
+
+    if (result.success) {
+      navigate('/home');
+    } else {
+      setLocalError(result.error || 'Login failed');
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-      <div className="bg-black/75 p-16 rounded-lg w-full max-w-md">
-        <h1 className="text-3xl font-bold text-white mb-8">Sign In</h1>
+    <div className="min-h-screen bg-gray-900 flex items-center justify-center p-4">
+      <div className="bg-gray-800 p-8 rounded-lg shadow-xl w-full max-w-md">
+        <div className="text-center mb-6">
+          <i className="bi bi-film text-5xl text-red-600"></i>
+        </div>
         
-        {error && (
-          <div className="bg-red-600 text-white p-3 rounded mb-4">
-            {error}
+        <h1 className="text-3xl font-bold text-white mb-2 text-center">
+          Welcome Back
+        </h1>
+        <p className="text-gray-400 text-center mb-8">
+          Sign in to GZ Movie
+        </p>
+
+        {localError && (
+          <div className="bg-red-500/20 border border-red-500 text-red-400 p-3 rounded mb-6 flex items-center gap-2">
+            <i className="bi bi-exclamation-triangle"></i>
+            {localError}
           </div>
         )}
-        
-        <form onSubmit={handleSubmit}>
-          <input
-            type="text"
-            placeholder="Username or Email"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            className="w-full p-4 mb-4 bg-gray-700 text-white rounded"
-            required
-          />
-          <input
-            type="password"
-            placeholder="Password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            className="w-full p-4 mb-8 bg-gray-700 text-white rounded"
-            required
-          />
+
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label className="block text-gray-300 mb-2 flex items-center gap-2">
+              <i className="bi bi-person"></i>
+              Username
+            </label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              className="w-full p-3 rounded bg-gray-700 text-white border border-gray-600 focus:border-red-500 focus:outline-none"
+              placeholder="Enter your username"
+              required
+            />
+          </div>
+
+          <div>
+            <label className="block text-gray-300 mb-2 flex items-center gap-2">
+              <i className="bi bi-lock"></i>
+              Password
+            </label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              className="w-full p-3 rounded bg-gray-700 text-white border border-gray-600 focus:border-red-500 focus:outline-none"
+              placeholder="Enter your password"
+              required
+            />
+          </div>
+
           <button
             type="submit"
-            disabled={isLoading}
-            className="w-full py-4 bg-red-600 text-white rounded font-bold hover:bg-red-700 disabled:opacity-50"
+            disabled={isSubmitting}
+            className="w-full bg-red-600 text-white p-3 rounded-lg hover:bg-red-700 transition font-bold disabled:opacity-50 flex items-center justify-center gap-2"
           >
-            {isLoading ? 'Signing in...' : 'Sign In'}
+            {isSubmitting ? (
+              <>
+                <i className="bi bi-hourglass-split animate-spin"></i>
+                Signing in...
+              </>
+            ) : (
+              <>
+                <i className="bi bi-box-arrow-in-right"></i>
+                Sign In
+              </>
+            )}
           </button>
         </form>
-        
-        <p className="text-gray-400 mt-4">
-          New to GZ Movie?{' '}
-          <Link to="/signup" className="text-white hover:underline">
-            Sign up now
+
+        <p className="text-gray-400 text-center mt-6">
+          Don't have an account?{' '}
+          <Link to="/signup" className="text-red-500 hover:text-red-400">
+            Sign up
           </Link>
         </p>
       </div>
     </div>
   );
-};
-
-export default LoginPage;
+}
