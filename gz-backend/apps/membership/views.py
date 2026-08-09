@@ -1,7 +1,9 @@
+# app/membership/views.py
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
 from django.utils import timezone
+from .serializers import MembershipPlanAdminSerializer
 
 from .models import MembershipPlan, UserMembership
 from .serializers import (
@@ -81,3 +83,21 @@ class UserMembershipViewSet(viewsets.GenericViewSet):
             return Response(serializer.data)
         except UserMembership.DoesNotExist:
             return Response({'detail': 'No membership found.'}, status=status.HTTP_404_NOT_FOUND)
+
+
+# Admin viewset for managing membership plans (CRUD)
+class MembershipPlanAdminViewSet(viewsets.ModelViewSet):
+    """Admin CRUD — includes inactive plans + live subscriber counts."""
+    queryset = MembershipPlan.objects.all()
+    serializer_class = MembershipPlanAdminSerializer
+    permission_classes = [permissions.IsAdminUser]
+
+    @action(detail=False, methods=['get'])
+    def ppv_stats(self, request):
+        """Stats for the 'Special' pay-per-video tier — sourced from purchases, not MembershipPlan."""
+        from apps.purchases.models import MoviePurchase
+        active = MoviePurchase.objects.filter(valid_until__gte=timezone.now())
+        return Response({
+            'active_purchase_count': active.count(),
+            'active_purchasers': active.values('user').distinct().count(),
+        })

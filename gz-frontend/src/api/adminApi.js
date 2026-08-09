@@ -32,6 +32,12 @@ const adminApi = {
         axiosClient.patch(`/admin/movies-admin/${id}/`, formData, config),
     deleteMovie: (id) => axiosClient.delete(`/admin/movies-admin/${id}/`),
 
+    // ---------- Membership Plans ----------
+    getMembershipPlans: () => axiosClient.get("/admin/membership-plans/"),
+    createMembershipPlan: (data) => axiosClient.post("/admin/membership-plans/", data),
+    updateMembershipPlan: (id, data) => axiosClient.patch(`/admin/membership-plans/${id}/`, data),
+    deleteMembershipPlan: (id) => axiosClient.delete(`/admin/membership-plans/${id}/`),
+    getPpvStats: () => axiosClient.get("/admin/membership-plans/ppv_stats/"),
 };
 
 export default adminApi;

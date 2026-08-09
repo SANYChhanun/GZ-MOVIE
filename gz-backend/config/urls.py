@@ -49,9 +49,15 @@ urlpatterns = [
         "api/admin/",
         include("apps.movies.admin_urls")
     ),
+    # Admin Content Management API
     path(
         "api/admin/",
         include("apps.content.admin_urls")
+    ),
+    # Admin Membership Management API
+    path(
+        "api/admin/",
+        include("apps.membership.admin_urls")
     ),
 
     # Other APIs

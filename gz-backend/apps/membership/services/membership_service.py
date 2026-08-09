@@ -1,3 +1,4 @@
+# app/membership/services/membership_service.py
 from django.utils import timezone
 from django.core.exceptions import ValidationError
 from apps.membership.models import MembershipPlan, UserMembership
@@ -32,25 +33,31 @@ class MembershipService:
 
     @staticmethod
     def activate_membership(user, plan, start_date=None, auto_renew=False):
-        """
-        Activate (or renew) a membership for the user.
-        If the user already has an expired membership, we extend it from now.
-        """
         from datetime import timedelta
-
         now = timezone.now()
-        membership, created = UserMembership.objects.get_or_create(user=user)
-        # If currently active and not expired, extend the expiry date
-        if membership.is_active and membership.expires_at and membership.expires_at > now:
-            membership.expires_at += timedelta(days=plan.duration_days)
+        membership, _ = UserMembership.objects.get_or_create(user=user)
+
+        # Free tier (no duration) = downgrade / no VIP access
+        if not plan.duration_days:
+            membership.plan = plan
+            membership.start_date = start_date or now
+            membership.expires_at = None
+            membership.is_active = False
+            membership.auto_renew = False
+            membership.save()
+            return membership
+
+        if (membership.is_active and membership.expires_at and membership.expires_at > now
+                and membership.plan_id == plan.id):
+            membership.expires_at += timedelta(days=plan.duration_days)   # renew same plan
         else:
             membership.start_date = start_date or now
             membership.expires_at = membership.start_date + timedelta(days=plan.duration_days)
-            membership.is_active = True
             membership.plan = plan
+            membership.is_active = True
             membership.auto_renew = auto_renew
-            membership.save()
 
+        membership.save()   # ← ត្រូវហៅជានិច្ច (bug ដើមមិនហៅ save() ក្នុង branch renew)
         return membership
 
     @staticmethod
