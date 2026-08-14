@@ -1,21 +1,31 @@
-# movies/urls.py
+# apps/movies/urls.py
+from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-
-from . import views
-
+from .views import (
+    MovieViewSet,
+    EpisodeViewSet,
+    HeroBannerViewSet,
+    MovieAdminViewSet,
+    GenreAdminViewSet,
+    CategoryAdminViewSet,
+    CastAdminViewSet,
+    CrewAdminViewSet,
+)
 
 router = DefaultRouter()
 
-router.register(
-    r'movies',
-    views.MovieViewSet,
-    basename='movie'
-)
+# Public endpoints
+router.register(r'movies', MovieViewSet, basename='movie')
+router.register(r'episodes', EpisodeViewSet, basename='episode')
+router.register(r'banners', HeroBannerViewSet, basename='banner')
 
-router.register(
-    r'episodes',
-    views.EpisodeViewSet,
-    basename='episode'
-)
+# Admin endpoints
+router.register(r'admin/movies', MovieAdminViewSet, basename='admin-movie')
+router.register(r'admin/genres', GenreAdminViewSet, basename='admin-genre')
+router.register(r'admin/categories', CategoryAdminViewSet, basename='admin-category')
+router.register(r'admin/cast', CastAdminViewSet, basename='admin-cast')
+router.register(r'admin/crew', CrewAdminViewSet, basename='admin-crew')
 
-urlpatterns = router.urls
+urlpatterns = [
+    path('', include(router.urls)),  # ✅ កែពី 'api/' ទៅ ''
+]

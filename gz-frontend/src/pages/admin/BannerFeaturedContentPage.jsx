@@ -10,6 +10,8 @@ import {
   RefreshCw,
   UploadCloud,
   AlertCircle,
+  Film,
+  Link2,
 } from "lucide-react";
 import SectionHeader from "../../components/common/SectionHeader";
 import Badge from "../../components/common/Badge";
@@ -17,10 +19,20 @@ import IconBtn from "../../components/common/IconBtn";
 import adminApi from "../../api/adminApi";
 import { inputClass } from "../../utils/constants";
 
+// NOTE ON link_type/movie/external_url (was a single free-text `link` field):
+// HeroBannerCreateUpdateSerializer does NOT accept a raw `link` string at all --
+// `link` is computed server-side in Movie.save()/HeroBanner.save() from either
+// `movie` (an FK, chosen from a dropdown here) or `external_url`. This guarantees a
+// "movie" banner always resolves to /watch/<movie.id> and an admin can never
+// accidentally type in a raw video URL. See HeroBanner.save() in models.py and
+// HeroBannerCreateUpdateSerializer.validate() in serializers.py.
+
 const emptyForm = {
   title: "",
   subtitle: "",
-  link: "",
+  link_type: "movie", // 'movie' | 'external' | 'none'
+  movie: "",
+  external_url: "",
   order: 0,
   is_active: true,
 };
@@ -29,6 +41,8 @@ const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
 
 export default function BannerFeaturedContentPage() {
   const [banners, setBanners] = useState([]);
+  const [movies, setMovies] = useState([]); // for the "pick a movie" dropdown
+  const [moviesLoading, setMoviesLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showModal, setShowModal] = useState(false);
@@ -60,8 +74,23 @@ export default function BannerFeaturedContentPage() {
     }
   };
 
+  // Fetch movies for the picker (used only when link_type === 'movie')
+  const fetchMovies = async () => {
+    setMoviesLoading(true);
+    try {
+      const res = await adminApi.getMovies({ page_size: 500 });
+      const list = Array.isArray(res.data?.results) ? res.data.results : (Array.isArray(res.data) ? res.data : []);
+      setMovies(list);
+    } catch (err) {
+      console.error("Failed to load movies for banner picker:", err);
+    } finally {
+      setMoviesLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchBanners();
+    fetchMovies();
   }, []);
 
   // Revoke any object URL we created when the modal closes/unmounts
@@ -87,7 +116,9 @@ export default function BannerFeaturedContentPage() {
     setForm({
       title: banner.title,
       subtitle: banner.subtitle || "",
-      link: banner.link || "",
+      link_type: banner.link_type || "movie",
+      movie: banner.movie_id ?? "",
+      external_url: banner.external_url || "",
       order: banner.order,
       is_active: banner.is_active,
     });
@@ -174,11 +205,21 @@ export default function BannerFeaturedContentPage() {
       setFormError("A banner image is required.");
       return;
     }
+    if (form.link_type === "movie" && !form.movie) {
+      setFormError("Please pick a movie for this banner to link to.");
+      return;
+    }
+    if (form.link_type === "external" && !form.external_url.trim()) {
+      setFormError("Please provide an external URL.");
+      return;
+    }
 
     const fd = new FormData();
     fd.append("title", form.title);
     fd.append("subtitle", form.subtitle);
-    fd.append("link", form.link);
+    fd.append("link_type", form.link_type);
+    if (form.link_type === "movie") fd.append("movie", form.movie);
+    if (form.link_type === "external") fd.append("external_url", form.external_url);
     fd.append("order", String(form.order));
     fd.append("is_active", String(form.is_active));
     if (imageFile) fd.append("image", imageFile);
@@ -318,11 +359,21 @@ export default function BannerFeaturedContentPage() {
                   {banner.subtitle}
                 </div>
               )}
-              {banner.link && (
-                <div className="text-[11px] text-slate-500 truncate mt-1">
-                  {banner.link}
-                </div>
-              )}
+              <div className="text-[11px] text-slate-500 truncate mt-1 flex items-center gap-1">
+                {banner.link_type === "movie" ? (
+                  <>
+                    <Film size={11} className="shrink-0" />
+                    {banner.movie_title || "(no movie selected)"}
+                  </>
+                ) : banner.link_type === "external" ? (
+                  <>
+                    <Link2 size={11} className="shrink-0" />
+                    {banner.external_url}
+                  </>
+                ) : (
+                  "No link"
+                )}
+              </div>
             </div>
           </div>
         ))}
@@ -455,18 +506,67 @@ export default function BannerFeaturedContentPage() {
                 />
               </div>
 
+              {/* Link target: this drives what clicking the banner actually does.
+                  "Movie" is the normal case — the banner always resolves to the
+                  movie's own /watch/<id> detail page, never a raw video URL. */}
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">
-                  Link (optional)
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                  Links to
                 </label>
-                <input
-                  type="url"
-                  name="link"
-                  value={form.link}
-                  onChange={handleChange}
-                  placeholder="https://..."
-                  className={inputClass}
-                />
+                <div className="flex gap-2 mb-3">
+                  {[
+                    { value: "movie", label: "A movie", icon: Film },
+                    { value: "external", label: "External URL", icon: Link2 },
+                    { value: "none", label: "No link", icon: X },
+                  ].map(({ value, label, icon: Icon }) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => setForm((prev) => ({ ...prev, link_type: value }))}
+                      className={`flex-1 inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border transition-colors ${
+                        form.link_type === value
+                          ? "bg-amber-500/15 border-amber-500 text-amber-400"
+                          : "bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200"
+                      }`}
+                    >
+                      <Icon size={14} /> {label}
+                    </button>
+                  ))}
+                </div>
+
+                {form.link_type === "movie" && (
+                  <div>
+                    <select
+                      name="movie"
+                      value={form.movie}
+                      onChange={handleChange}
+                      className={`${inputClass} w-full`}
+                    >
+                      <option value="">
+                        {moviesLoading ? "Loading movies…" : "Select a movie…"}
+                      </option>
+                      {movies.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.title}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-xs text-slate-500 mt-1">
+                      The banner will link to this movie's page (/watch/{form.movie || "…"}).
+                    </p>
+                  </div>
+                )}
+
+                {form.link_type === "external" && (
+                  <input
+                    type="url"
+                    name="external_url"
+                    value={form.external_url}
+                    onChange={handleChange}
+                    placeholder="https://..."
+                    className={`${inputClass} w-full`}
+                  />
+                )}
               </div>
 
               <div className="flex gap-4">

@@ -1,12 +1,16 @@
-from django.shortcuts import get_object_or_404
+﻿from django.shortcuts import get_object_or_404
 from django.utils import timezone
 
 from rest_framework import status
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from apps.movies.models import Movie
+# FIX #1: import the same permission class used for movie detail,
+#         so stream-token issuance is gated the same way.
+from apps.movies.permissions import MovieAccessPermission
 
 from apps.streaming.models import StreamSession
 from apps.streaming.serializers import (
@@ -44,17 +48,23 @@ class StreamTokenView(APIView):
         video = get_object_or_404(
             Movie,
             id=video_id,
+            is_active=True,
         )
 
-        # Optional:
-        # Add your own movie access / membership check here.
+        # FIX #1 (CRITICAL): this was previously commented out, meaning
+        # ANY authenticated user could obtain a signed streaming URL for
+        # ANY movie - including VIP-only and pay-per-view content -
+        # without holding a valid subscription or purchase.
         #
-        # Example:
-        # if not video.is_published:
-        #     return Response(
-        #         {"detail": "Video unavailable."},
-        #         status=status.HTTP_403_FORBIDDEN,
-        #     )
+        # This re-uses the exact same MovieAccessPermission logic that
+        # gates the movie detail endpoint, so both places enforce
+        # identical rules (Free / VIP / PPV / Admin bypass).
+        checker = MovieAccessPermission()
+        if not checker.has_object_permission(request, self, video):
+            raise PermissionDenied(
+                "You do not have access to this content. "
+                "Please subscribe or purchase to continue."
+            )
 
         bunny_service = BunnyTokenService()
 

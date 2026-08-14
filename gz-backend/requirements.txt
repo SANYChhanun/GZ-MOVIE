@@ -5,6 +5,7 @@ django-filter>=24.2
 Pillow>=10.3
 python-dotenv>=1.0
 djangorestframework-simplejwt>=5.3
+requests>=2.31   # ★ NEW — needed by BunnyUploadService to call Bunny.net's REST API
 
 # --- នឹងត្រូវការនៅពេលប្តូរពី SQLite ទៅ PostgreSQL (Production) ---
 # psycopg2-binary>=2.9

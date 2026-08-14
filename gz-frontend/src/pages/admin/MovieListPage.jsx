@@ -5,17 +5,18 @@ import SectionHeader from "../../components/common/SectionHeader";
 import Badge, { accessTone, statusTone } from "../../components/common/Badge";
 import IconBtn from "../../components/common/IconBtn";
 import Table from "../../components/common/Table";
-import AddMovieDrawer from "../../features/admin/AddMovieDrawer";
 import adminApi from "../../api/adminApi";
-import { ACCESS_TYPES, inputClass } from "../../utils/constants";
+import AddMovieDrawer from "../../features/admin/AddMovieDrawer";
 
-// Helper to map access_type to a display string (if your backend uses "free"/"member"/"purchase")
+/* ============================================================
+   Shared helpers
+   ============================================================ */
+
 const accessDisplay = (type) => {
   const map = { free: "Free", member: "Membership", purchase: "Pay Per View" };
   return map[type] || type;
 };
 
-// Handles categories coming back as [{id,name}], [name, ...], or [id, ...]
 const formatCategories = (categories) => {
   if (!Array.isArray(categories) || categories.length === 0) return "—";
   return categories
@@ -24,7 +25,9 @@ const formatCategories = (categories) => {
     .join(", ");
 };
 
-// Small poster thumbnail with graceful fallback if the image fails/doesn't exist
+const inputClass = "bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500";
+const PAGE_SIZE = 10;
+
 function MoviePosterThumb({ src, alt }) {
   const [failed, setFailed] = useState(false);
   const showImage = Boolean(src) && !failed;
@@ -45,44 +48,39 @@ function MoviePosterThumb({ src, alt }) {
   );
 }
 
-const PAGE_SIZE = 10;   // adjust as needed
+/* ============================================================
+   Movie List Page
+   ============================================================ */
 
 export default function MovieListPage() {
-  // Data state
   const [movies, setMovies] = useState([]);
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Filtering & pagination state
   const [query, setQuery] = useState("");
   const [accessFilter, setAccessFilter] = useState("");
-  const [ordering, setOrdering] = useState("-release_date");  // default ordering
+  const [ordering, setOrdering] = useState("-release_date");
   const [page, setPage] = useState(1);
 
-  // Drawer state
-  const [showAddMovie, setShowAddMovie] = useState(false);
+  // Drawer state: showForm toggles the Add/Edit drawer;
+  // editingMovie null => create mode, movie object => edit mode (pre-filled)
+  const [showForm, setShowForm] = useState(false);
+  const [editingMovie, setEditingMovie] = useState(null);
 
-  // Function to fetch movies from API
   const fetchMovies = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const params = {
-        page,
-        ordering,
-      };
+      const params = { page, ordering };
       if (query.trim()) params.search = query.trim();
-      if (accessFilter) params.access_type = accessFilter;   // matches your MovieFilter field
+      if (accessFilter) params.access_type = accessFilter;
 
       const res = await adminApi.getMovies(params);
-      // Response depends on whether pagination is active.
-      // If DRF returns a paginated object: { count, results, next, previous }
       if (res.data && Array.isArray(res.data.results)) {
         setMovies(res.data.results);
         setTotalCount(res.data.count);
       } else if (Array.isArray(res.data)) {
-        // Unpaginated list
         setMovies(res.data);
         setTotalCount(res.data.length);
       } else {
@@ -99,35 +97,45 @@ export default function MovieListPage() {
     }
   }, [query, accessFilter, ordering, page]);
 
-  // Refetch when search/filter/page changes
   useEffect(() => {
     fetchMovies();
   }, [fetchMovies]);
 
-  // Reset page to 1 when search or filter changes
   useEffect(() => {
     setPage(1);
   }, [query, accessFilter]);
 
-  // Delete movie handler
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this movie? This action cannot be undone.")) return;
     try {
       await adminApi.deleteMovie(id);
-      // Refetch list (or remove locally)
       fetchMovies();
     } catch (err) {
       alert("Failed to delete movie.");
     }
   };
 
-  // Handler for after creating a movie – refresh list
-  const handleMovieCreated = () => {
-    setShowAddMovie(false);
+  const handleAddClick = () => {
+    setEditingMovie(null);
+    setShowForm(true);
+  };
+
+  const handleEditClick = (movie) => {
+    setEditingMovie(movie);
+    setShowForm(true);
+  };
+
+  const handleFormCancel = () => {
+    setShowForm(false);
+    setEditingMovie(null);
+  };
+
+  const handleFormSave = () => {
+    setShowForm(false);
+    setEditingMovie(null);
     fetchMovies();
   };
 
-  // Loading state
   if (loading && movies.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -136,7 +144,6 @@ export default function MovieListPage() {
     );
   }
 
-  // Error state
   if (error) {
     return (
       <div className="text-center py-16">
@@ -151,7 +158,6 @@ export default function MovieListPage() {
     );
   }
 
-  // Pagination controls (simple)
   const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
   return (
@@ -161,7 +167,7 @@ export default function MovieListPage() {
         subtitle={`${totalCount} titles in the catalog`}
         action={
           <button
-            onClick={() => setShowAddMovie(true)}
+            onClick={handleAddClick}
             className="inline-flex items-center gap-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 text-sm font-medium px-3.5 py-2 rounded-lg transition-colors"
           >
             <Plus size={15} /> Add Movie
@@ -180,21 +186,13 @@ export default function MovieListPage() {
             className={`${inputClass} pl-8 w-full`}
           />
         </div>
-        <select
-          value={accessFilter}
-          onChange={(e) => setAccessFilter(e.target.value)}
-          className={inputClass}
-        >
+        <select value={accessFilter} onChange={(e) => setAccessFilter(e.target.value)} className={inputClass}>
           <option value="">All Access</option>
           <option value="free">Free</option>
           <option value="member">Membership</option>
           <option value="purchase">Pay Per View</option>
         </select>
-        <select
-          value={ordering}
-          onChange={(e) => setOrdering(e.target.value)}
-          className={inputClass}
-        >
+        <select value={ordering} onChange={(e) => setOrdering(e.target.value)} className={inputClass}>
           <option value="-release_date">Latest first</option>
           <option value="release_date">Oldest first</option>
           <option value="-rating">Top rated</option>
@@ -202,7 +200,7 @@ export default function MovieListPage() {
         </select>
       </div>
 
-      {/* Table (using your existing Table component) */}
+      {/* Table */}
       <Table
         headers={["Title", "Category", "Access", "Status", "Year", "Views", "Rating", ""]}
         empty="No movies match your criteria."
@@ -212,9 +210,10 @@ export default function MovieListPage() {
             <span className="font-medium text-slate-100">{m.title}</span>
           </div>,
           formatCategories(m.categories),
-          <Badge tone={accessTone(m.access_type)} key={`acc-${m.id}`}>{accessDisplay(m.access_type)}</Badge>,
-          
-          <Badge tone={statusTone(m.is_active ? "Active" : "Inactive")} key={`stat-${m.id}`}>
+          <Badge tone={accessTone[m.access_type] || accessTone.free} key={`acc-${m.id}`}>
+            {accessDisplay(m.access_type)}
+          </Badge>,
+          <Badge tone={statusTone[m.is_active ? "Active" : "Inactive"] || statusTone.inactive} key={`stat-${m.id}`}>
             {m.is_active ? "Active" : "Inactive"}
           </Badge>,
           new Date(m.release_date).getFullYear(),
@@ -228,7 +227,7 @@ export default function MovieListPage() {
             )}
           </span>,
           <div className="flex items-center gap-1.5" key={`act-${m.id}`}>
-            <IconBtn icon={Pencil} title="Edit" />
+            <IconBtn icon={Pencil} title="Edit" onClick={() => handleEditClick(m)} />
             <IconBtn icon={Trash2} tone="crimson" title="Delete" onClick={() => handleDelete(m.id)} />
           </div>,
         ])}
@@ -257,11 +256,12 @@ export default function MovieListPage() {
         </div>
       )}
 
-      {/* Add Movie Drawer */}
-      {showAddMovie && (
+      {/* Add / Edit Movie Drawer */}
+      {showForm && (
         <AddMovieDrawer
-          onClose={() => setShowAddMovie(false)}
-          onSave={handleMovieCreated}
+          movie={editingMovie}
+          onClose={handleFormCancel}
+          onSave={handleFormSave}
         />
       )}
     </>

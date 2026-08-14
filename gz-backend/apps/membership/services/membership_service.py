@@ -47,17 +47,27 @@ class MembershipService:
             membership.save()
             return membership
 
-        if (membership.is_active and membership.expires_at and membership.expires_at > now
-                and membership.plan_id == plan.id):
-            membership.expires_at += timedelta(days=plan.duration_days)   # renew same plan
+        # ★ FIX #3: previously this only stacked (added days on top of the
+        # remaining expiry) when the user repurchased the EXACT SAME plan.
+        # Buying a different plan (e.g. upgrading from 1-month to 3-months)
+        # fell into the else branch and threw away any remaining days —
+        # contradicting the stacking rule in the spec ("subscription
+        # stacking must always add on top of the old expires_at, never
+        # discard remaining days").
+        #
+        # The only thing that should decide "stack vs. start fresh" is
+        # whether the user currently has *any* active, non-expired
+        # membership — not which specific plan it was.
+        if membership.is_active and membership.expires_at and membership.expires_at > now:
+            membership.expires_at += timedelta(days=plan.duration_days)
         else:
             membership.start_date = start_date or now
             membership.expires_at = membership.start_date + timedelta(days=plan.duration_days)
-            membership.plan = plan
             membership.is_active = True
-            membership.auto_renew = auto_renew
 
-        membership.save()   # ← ត្រូវហៅជានិច្ច (bug ដើមមិនហៅ save() ក្នុង branch renew)
+        membership.plan = plan          # always move to the newly purchased plan
+        membership.auto_renew = auto_renew
+        membership.save()
         return membership
 
     @staticmethod

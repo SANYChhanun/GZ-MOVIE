@@ -39,10 +39,7 @@ urlpatterns = [
     ),
 
     # Public Movie API
-    path(
-        "api/movies/",
-        include("apps.movies.urls")
-    ),
+    path("api/", include("apps.movies.urls")),
 
     # Admin Movie Management API
     path(
