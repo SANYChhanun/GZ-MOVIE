@@ -1,36 +1,17 @@
 ﻿# apps/movies/serializers.py
 from django.utils.text import slugify
 from rest_framework import serializers
-from .models import Movie, Episode, Genre, Category, Cast, Crew, HeroBanner
+from .models import Movie, Episode, HeroBanner
 from .services.bunny_service import BunnyStreamService
-
-
-# ============================================================
-# BASIC SERIALIZERS
-# ============================================================
-
-class GenreSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Genre
-        fields = ['id', 'name', 'slug']
-
-
-class CategorySerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Category
-        fields = ['id', 'name', 'slug']
-
-
-class CastSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Cast
-        fields = ['id', 'name', 'photo', 'character_name']
-
-
-class CrewSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Crew
-        fields = ['id', 'name', 'role', 'photo']
+# Genre/Category/Cast/Crew moved to apps.taxonomy -- import their
+# serializers from there instead of defining local duplicates.
+from apps.taxonomy.serializers import (
+    GenreSerializer,
+    CategorySerializer,
+    CastSerializer,
+    CrewSerializer,
+)
+from apps.taxonomy.models import Genre, Category
 
 
 # ============================================================

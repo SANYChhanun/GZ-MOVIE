@@ -33,6 +33,8 @@ export const moviesApi = {
   
   // ============ SEARCH ============
   searchMovies: (query) => axiosClient.get('/movies/', { params: { search: query } }),
+
+  
 };
 
 export default moviesApi;

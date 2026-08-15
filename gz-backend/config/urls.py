@@ -78,6 +78,21 @@ urlpatterns = [
         include("apps.content.urls")
     ),
      path('api/auth/', include('apps.accounts.urls')),
+     # Admin Movie Management API
+    path(
+        "api/admin/",
+        include("apps.movies.admin_urls")
+    ),
+    # Admin Taxonomy Management API (Genre, Category, Cast, Crew)
+    path(
+        "api/admin/",
+        include("apps.taxonomy.urls")
+    ),
+    # Admin Content Management API
+    path(
+        "api/admin/",
+        include("apps.content.admin_urls")
+    ),
 ]
 
 

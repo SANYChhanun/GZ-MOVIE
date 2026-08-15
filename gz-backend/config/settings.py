@@ -53,6 +53,7 @@ INSTALLED_APPS = [
 
     # Local apps - ទុកតែ apps ដែលមានកូដពេញលេញ
     "apps.accounts",
+    "apps.taxonomy",
     "apps.movies",
     "common",
 

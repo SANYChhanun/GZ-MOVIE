@@ -1,63 +1,12 @@
-# movies/models.py
+# apps/movies/models.py
+#
+# Genre, Category, Cast, and Crew moved out to apps.taxonomy -- see that
+# app's models.py. Cross-app FK/M2M fields below reference them by the
+# 'app_label.ModelName' string form, which is required (and preferred by
+# Django) whenever a model references another app's model, since it
+# avoids a hard import dependency between the two apps.
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
-
-
-class Genre(models.Model):
-    name = models.CharField(max_length=100, unique=True)
-    slug = models.SlugField(max_length=120, unique=True)
-
-    class Meta:
-        ordering = ['name']
-
-    def __str__(self):
-        return self.name
-
-
-class Category(models.Model):
-    """e.g., Movie, TV Series, Documentary, Animation"""
-    name = models.CharField(max_length=100, unique=True)
-    slug = models.SlugField(max_length=120, unique=True)
-
-    class Meta:
-        verbose_name_plural = 'Categories'
-        ordering = ['name']
-
-    def __str__(self):
-        return self.name
-
-
-class Cast(models.Model):
-    name = models.CharField(max_length=200)
-    photo = models.ImageField(upload_to='cast/', blank=True, null=True)
-    character_name = models.CharField(max_length=200, blank=True)
-
-    class Meta:
-        verbose_name_plural = 'Cast'
-
-    def __str__(self):
-        return f"{self.name} as {self.character_name}" if self.character_name else self.name
-
-
-class Crew(models.Model):
-    """Director, Producer, Writer, etc."""
-    ROLE_CHOICES = [
-        ('director', 'Director'),
-        ('producer', 'Producer'),
-        ('writer', 'Writer'),
-        ('cinematographer', 'Cinematographer'),
-        ('composer', 'Composer'),
-        ('other', 'Other'),
-    ]
-    name = models.CharField(max_length=200)
-    role = models.CharField(max_length=50, choices=ROLE_CHOICES, default='other')
-    photo = models.ImageField(upload_to='crew/', blank=True, null=True)
-
-    class Meta:
-        verbose_name_plural = 'Crew'
-
-    def __str__(self):
-        return f"{self.name} ({self.get_role_display()})"
 
 
 # apps/movies/models.py
@@ -88,10 +37,10 @@ class Movie(models.Model):
         null=True,
         help_text="Upload video file directly (MP4, MOV, MKV, WebM)"
     )
-    
+
     video_file = models.URLField(blank=True, null=True, help_text="Bunny.net video URL")
     bunny_video_id = models.CharField(max_length=255, blank=True, null=True, help_text="Bunny Stream Video ID")
-    
+
     poster = models.ImageField(upload_to='movies/posters/')
     backdrop = models.ImageField(upload_to='movies/backdrops/', blank=True, null=True)
     trailer_url = models.URLField(blank=True, null=True)
@@ -110,11 +59,12 @@ class Movie(models.Model):
     is_new_release = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
-    # Relationships
-    genres = models.ManyToManyField(Genre, related_name='movies')
-    categories = models.ManyToManyField(Category, related_name='movies')
-    cast = models.ManyToManyField(Cast, blank=True, related_name='movies')
-    crew = models.ManyToManyField(Crew, blank=True, related_name='movies')
+    # Relationships -- Genre/Category/Cast/Crew now live in apps.taxonomy,
+    # referenced here by the 'taxonomy.ModelName' string form.
+    genres = models.ManyToManyField('taxonomy.Genre', related_name='movies')
+    categories = models.ManyToManyField('taxonomy.Category', related_name='movies')
+    cast = models.ManyToManyField('taxonomy.Cast', blank=True, related_name='movies')
+    crew = models.ManyToManyField('taxonomy.Crew', blank=True, related_name='movies')
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -161,17 +111,17 @@ class Episode(models.Model):
 
 class HeroBanner(models.Model):
     """Top hero banner displayed on the landing page."""
-    
+
     LINK_TYPE_CHOICES = [
         ('movie', 'Movie (Internal)'),
         ('external', 'External URL'),
         ('none', 'No Link'),
     ]
-    
+
     title = models.CharField(max_length=255, help_text="Banner headline text")
     subtitle = models.TextField(blank=True, help_text="Optional subtitle")
     image = models.ImageField(upload_to='content/banners/', help_text="Recommended: 1600×900")
-    
+
     # ✅ NEW FIELDS
     link_type = models.CharField(max_length=10, choices=LINK_TYPE_CHOICES, default='movie')
     movie = models.ForeignKey(
@@ -182,10 +132,10 @@ class HeroBanner(models.Model):
         related_name='hero_banners'
     )
     external_url = models.URLField(blank=True, null=True)
-    
+
     # Keep old field for backward compatibility
     link = models.URLField(blank=True, help_text="Auto-generated from movie or external_url")
-    
+
     order = models.PositiveIntegerField(default=0)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -199,7 +149,7 @@ class HeroBanner(models.Model):
     def __str__(self):
         movie_name = self.movie.title if self.movie else 'No movie'
         return f"Banner #{self.order}: {self.title} → {movie_name}"
-    
+
     def save(self, *args, **kwargs):
         """Auto-generate link from movie or external_url."""
         if self.link_type == 'movie' and self.movie:

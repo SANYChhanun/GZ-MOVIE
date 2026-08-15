@@ -1,6 +1,6 @@
-// src/pages/admin/MovieListPage.jsx
-import { useState, useEffect, useCallback } from "react";
-import { Search, Plus, Pencil, Trash2, Star, Film, Loader, RefreshCw } from "lucide-react";
+// src/pages/admin/MovieListPage.jsx — កែលម្អ
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { Search, Plus, Pencil, Trash2, Star, Film, Loader, RefreshCw, Calendar, Eye } from "lucide-react";
 import SectionHeader from "../../components/common/SectionHeader";
 import Badge, { accessTone, statusTone } from "../../components/common/Badge";
 import IconBtn from "../../components/common/IconBtn";
@@ -9,12 +9,16 @@ import adminApi from "../../api/adminApi";
 import AddMovieDrawer from "../../features/admin/AddMovieDrawer";
 
 /* ============================================================
-   Shared helpers
+   Shared helpers (កែលម្អ)
    ============================================================ */
 
 const accessDisplay = (type) => {
-  const map = { free: "Free", member: "Membership", purchase: "Pay Per View" };
-  return map[type] || type;
+  const map = { 
+    free: "Free", 
+    member: "Membership", 
+    purchase: "Pay Per View" 
+  };
+  return map[type] || type || "—";
 };
 
 const formatCategories = (categories) => {
@@ -25,7 +29,18 @@ const formatCategories = (categories) => {
     .join(", ");
 };
 
-const inputClass = "bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500";
+const formatDate = (dateString) => {
+  if (!dateString) return "—";
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return "—";
+  return date.toLocaleDateString('km-KH', { 
+    year: 'numeric', 
+    month: 'short', 
+    day: 'numeric' 
+  });
+};
+
+const inputClass = "bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 transition-all";
 const PAGE_SIZE = 10;
 
 function MoviePosterThumb({ src, alt }) {
@@ -40,6 +55,7 @@ function MoviePosterThumb({ src, alt }) {
           alt={alt}
           className="w-full h-full object-cover"
           onError={() => setFailed(true)}
+          loading="lazy"
         />
       ) : (
         <Film size={13} className="text-amber-400" />
@@ -49,7 +65,7 @@ function MoviePosterThumb({ src, alt }) {
 }
 
 /* ============================================================
-   Movie List Page
+   Movie List Page (កែលម្អ)
    ============================================================ */
 
 export default function MovieListPage() {
@@ -62,18 +78,26 @@ export default function MovieListPage() {
   const [accessFilter, setAccessFilter] = useState("");
   const [ordering, setOrdering] = useState("-release_date");
   const [page, setPage] = useState(1);
+  const [debouncedQuery, setDebouncedQuery] = useState("");
 
-  // Drawer state: showForm toggles the Add/Edit drawer;
-  // editingMovie null => create mode, movie object => edit mode (pre-filled)
+  // Drawer state
   const [showForm, setShowForm] = useState(false);
   const [editingMovie, setEditingMovie] = useState(null);
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedQuery(query);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [query]);
 
   const fetchMovies = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const params = { page, ordering };
-      if (query.trim()) params.search = query.trim();
+      if (debouncedQuery.trim()) params.search = debouncedQuery.trim();
       if (accessFilter) params.access_type = accessFilter;
 
       const res = await adminApi.getMovies(params);
@@ -95,7 +119,7 @@ export default function MovieListPage() {
     } finally {
       setLoading(false);
     }
-  }, [query, accessFilter, ordering, page]);
+  }, [debouncedQuery, accessFilter, ordering, page]);
 
   useEffect(() => {
     fetchMovies();
@@ -103,13 +127,18 @@ export default function MovieListPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [query, accessFilter]);
+  }, [debouncedQuery, accessFilter]);
 
   const handleDelete = async (id) => {
     if (!window.confirm("Delete this movie? This action cannot be undone.")) return;
     try {
       await adminApi.deleteMovie(id);
-      fetchMovies();
+      // បើទំព័រចុងក្រោយមានតែ 1 item ហើយលុបចោល ត្រូវត្រឡប់ទៅទំព័រមុន
+      if (movies.length === 1 && page > 1) {
+        setPage(page - 1);
+      } else {
+        fetchMovies();
+      }
     } catch (err) {
       alert("Failed to delete movie.");
     }
@@ -136,10 +165,15 @@ export default function MovieListPage() {
     fetchMovies();
   };
 
+  const totalPages = useMemo(() => Math.ceil(totalCount / PAGE_SIZE), [totalCount]);
+
   if (loading && movies.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader className="animate-spin text-slate-400" size={32} />
+        <div className="text-center">
+          <Loader className="animate-spin text-amber-500 mx-auto mb-4" size={32} />
+          <p className="text-slate-400 text-sm">កំពុងផ្ទុកទិន្នន័យ...</p>
+        </div>
       </div>
     );
   }
@@ -147,18 +181,19 @@ export default function MovieListPage() {
   if (error) {
     return (
       <div className="text-center py-16">
+        <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center mx-auto mb-4">
+          <i className="bi bi-exclamation-triangle text-2xl text-red-400"></i>
+        </div>
         <p className="text-red-400 mb-4">{error}</p>
         <button
           onClick={fetchMovies}
-          className="inline-flex items-center gap-2 bg-slate-800 text-slate-200 px-4 py-2 rounded-lg"
+          className="inline-flex items-center gap-2 bg-slate-800 hover:bg-slate-700 text-slate-200 px-4 py-2 rounded-lg transition-colors"
         >
           <RefreshCw size={15} /> Retry
         </button>
       </div>
     );
   }
-
-  const totalPages = Math.ceil(totalCount / PAGE_SIZE);
 
   return (
     <>
@@ -216,8 +251,14 @@ export default function MovieListPage() {
           <Badge tone={statusTone[m.is_active ? "Active" : "Inactive"] || statusTone.inactive} key={`stat-${m.id}`}>
             {m.is_active ? "Active" : "Inactive"}
           </Badge>,
-          new Date(m.release_date).getFullYear(),
-          m.view_count,
+          <span className="flex items-center gap-1" key={`year-${m.id}`}>
+            <Calendar size={12} className="text-slate-500" />
+            {new Date(m.release_date).getFullYear() || "—"}
+          </span>,
+          <span className="flex items-center gap-1" key={`views-${m.id}`}>
+            <Eye size={12} className="text-slate-500" />
+            {m.view_count?.toLocaleString() || 0}
+          </span>,
           <span className="flex items-center gap-1" key={`rate-${m.id}`}>
             {m.rating && (
               <>
@@ -233,14 +274,15 @@ export default function MovieListPage() {
         ])}
       />
 
-      {/* Pagination */}
+      {/* Pagination - កែលម្អឱ្យស្អាតជាងមុន */}
       {totalPages > 1 && (
-        <div className="flex justify-center mt-4 gap-2">
+        <div className="flex justify-center mt-4 gap-2 items-center">
           <button
             disabled={page === 1}
             onClick={() => setPage((p) => Math.max(1, p - 1))}
-            className="px-3 py-1 text-sm rounded bg-slate-800 text-slate-300 disabled:opacity-50"
+            className="px-3 py-1 text-sm rounded bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-50 transition-colors"
           >
+            <i className="bi bi-chevron-left mr-1"></i>
             Prev
           </button>
           <span className="px-3 py-1 text-sm text-slate-400">
@@ -249,9 +291,10 @@ export default function MovieListPage() {
           <button
             disabled={page === totalPages}
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-            className="px-3 py-1 text-sm rounded bg-slate-800 text-slate-300 disabled:opacity-50"
+            className="px-3 py-1 text-sm rounded bg-slate-800 hover:bg-slate-700 text-slate-300 disabled:opacity-50 transition-colors"
           >
             Next
+            <i className="bi bi-chevron-right ml-1"></i>
           </button>
         </div>
       )}

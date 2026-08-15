@@ -42,12 +42,12 @@ export default function CategoryGenreManagementPage() {
   const handleAddGenre = async (e) => {
     e.preventDefault();
     if (!newGenre.trim()) return;
-    const slug = newGenre.trim().toLowerCase().replace(/\s+/g, '-');
     try {
-      const res = await adminApi.createGenre({ name: newGenre.trim(), slug });
+      const res = await adminApi.createGenre({ name: newGenre.trim() });
       setGenres((prev) => [...prev, res.data]);
       setNewGenre("");
     } catch (err) {
+      console.error("CREATE GENRE ERROR:", JSON.stringify(err.response?.data, null, 2));
       alert("Failed to add genre. It may already exist.");
     }
   };
@@ -62,16 +62,15 @@ export default function CategoryGenreManagementPage() {
     }
   };
 
-  // Add a new category
   const handleAddCategory = async (e) => {
     e.preventDefault();
     if (!newCategory.trim()) return;
-    const slug = newCategory.trim().toLowerCase().replace(/\s+/g, '-');
     try {
-      const res = await adminApi.createCategory({ name: newCategory.trim(), slug });
+      const res = await adminApi.createCategory({ name: newCategory.trim() });
       setCategories((prev) => [...prev, res.data]);
       setNewCategory("");
     } catch (err) {
+      console.error("CREATE CATEGORY ERROR:", JSON.stringify(err.response?.data, null, 2));
       alert("Failed to add category. It may already exist.");
     }
   };

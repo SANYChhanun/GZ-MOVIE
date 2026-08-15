@@ -13,6 +13,7 @@ const adminApi = {
     getCategories: () => axiosClient.get('/admin/categories/'),
     createCategory: (data) => axiosClient.post('/admin/categories/', data),
     deleteCategory: (id) => axiosClient.delete(`/admin/categories/${id}/`),
+    
 
     // ===== Banners & Promotions =====
     getBanners: () => axiosClient.get("/admin/banners/"),

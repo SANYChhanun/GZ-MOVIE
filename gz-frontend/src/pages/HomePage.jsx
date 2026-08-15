@@ -1,5 +1,5 @@
-﻿// src/pages/HomePage.jsx — Netflix Style UI (Logic unchanged)
-import { useState, useEffect, useCallback, useRef } from 'react';
+﻿// src/pages/HomePage.jsx — Netflix Style UI (កែលម្អឱ្យកាន់តែស្អាត)
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { moviesApi } from '../api/moviesApi';
@@ -11,7 +11,7 @@ export default function HomePage() {
   const { user, isVIP } = useAuth();
   const navigate = useNavigate();
 
-  // ============ STATE (មិនផ្លាស់ប្តូរ) ============
+  // ============ STATE (រក្សាទុកដដែល + បន្ថែមថ្មី) ============
   const [banners, setBanners] = useState([]);
   const [featuredMovies, setFeaturedMovies] = useState([]);
   const [trendingMovies, setTrendingMovies] = useState([]);
@@ -21,11 +21,11 @@ export default function HomePage() {
   const [currentBannerIndex, setCurrentBannerIndex] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [bannerImageLoaded, setBannerImageLoaded] = useState(false);
   const [isBannerHovered, setIsBannerHovered] = useState(false);
+  const [bannerTransition, setBannerTransition] = useState(false);
   const bannerTimerRef = useRef(null);
 
-  // ============ FETCH ALL DATA (មិនផ្លាស់ប្តូរ) ============
+  // ============ FETCH ALL DATA (រក្សាទុកដដែល) ============
   const fetchAllData = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -47,34 +47,50 @@ export default function HomePage() {
         moviesApi.getGenres(),
       ]);
 
+      // Banner data
       if (bannersRes.status === 'fulfilled' && bannersRes.value.data?.length > 0) {
         setBanners(bannersRes.value.data);
       }
 
+      // Featured movies (ប្រើជា fallback សម្រាប់ banner)
       if (featuredRes.status === 'fulfilled' && featuredRes.value.data?.results?.length > 0) {
         setFeaturedMovies(featuredRes.value.data.results);
       } else if (featuredRes.status === 'fulfilled' && featuredRes.value.data?.length > 0) {
         setFeaturedMovies(featuredRes.value.data);
       }
 
+      // Trending/Popular movies
       if (popularRes.status === 'fulfilled' && popularRes.value.data?.results?.length > 0) {
         setTrendingMovies(popularRes.value.data.results);
       } else if (popularRes.status === 'fulfilled' && popularRes.value.data?.length > 0) {
         setTrendingMovies(popularRes.value.data);
       }
 
+      // New Releases - សំខាន់៖ តម្រៀបតាមថ្ងៃបន្ថែមថ្មី
       if (newRes.status === 'fulfilled' && newRes.value.data?.results?.length > 0) {
-        setNewReleases(newRes.value.data.results);
+        const sortedNew = [...newRes.value.data.results].sort((a, b) => {
+          const dateA = new Date(a.created_at || a.release_date || 0);
+          const dateB = new Date(b.created_at || b.release_date || 0);
+          return dateB - dateA;
+        });
+        setNewReleases(sortedNew);
       } else if (newRes.status === 'fulfilled' && newRes.value.data?.length > 0) {
-        setNewReleases(newRes.value.data);
+        const sortedNew = [...newRes.value.data].sort((a, b) => {
+          const dateA = new Date(a.created_at || a.release_date || 0);
+          const dateB = new Date(b.created_at || b.release_date || 0);
+          return dateB - dateA;
+        });
+        setNewReleases(sortedNew);
       }
 
+      // Free movies
       if (freeRes.status === 'fulfilled' && freeRes.value.data?.results?.length > 0) {
         setFreeMovies(freeRes.value.data.results);
       } else if (freeRes.status === 'fulfilled' && freeRes.value.data?.length > 0) {
         setFreeMovies(freeRes.value.data);
       }
 
+      // Genres
       if (genresRes.status === 'fulfilled' && genresRes.value.data?.length > 0) {
         setGenres(genresRes.value.data);
       }
@@ -91,7 +107,7 @@ export default function HomePage() {
     fetchAllData();
   }, [fetchAllData]);
 
-  // ============ AUTO-ROTATE BANNERS (មិនផ្លាស់ប្តូរ) ============
+  // ============ AUTO-ROTATE BANNERS (កែលម្អឱ្យរលូនជាងមុន) ============
   const hasBanners = banners.length > 0;
   const bannerItems = hasBanners ? banners : featuredMovies;
   const totalSlides = bannerItems.length;
@@ -99,8 +115,11 @@ export default function HomePage() {
   const startBannerTimer = useCallback(() => {
     if (totalSlides <= 1 || isBannerHovered) return;
     bannerTimerRef.current = setInterval(() => {
-      setCurrentBannerIndex(prev => (prev + 1) % totalSlides);
-      setBannerImageLoaded(false);
+      setBannerTransition(true);
+      setTimeout(() => {
+        setCurrentBannerIndex(prev => (prev + 1) % totalSlides);
+        setBannerTransition(false);
+      }, 500);
     }, 6000);
   }, [totalSlides, isBannerHovered]);
 
@@ -121,7 +140,7 @@ export default function HomePage() {
     startBannerTimer();
   };
 
-  // ============ HANDLERS (មិនផ្លាស់ប្តូរ) ============
+  // ============ HANDLERS (រក្សាទុកដដែល) ============
   const handleBannerClick = (banner) => {
     if (banner.link_type === 'movie' && banner.movie_id) {
       navigate(`/watch/${banner.movie_id}`);
@@ -142,21 +161,23 @@ export default function HomePage() {
 
   const currentBanner = bannerItems[currentBannerIndex];
 
-  // ============ LOADING STATE ============
+  // ============ LOADING STATE (កែលម្អ skeleton ឱ្យស្អាតជាងមុន) ============
   if (loading) {
     return (
       <div className="min-h-screen bg-[#141414]">
         <Header />
         <BannerSkeleton />
-        <MovieRowSkeleton />
-        <MovieRowSkeleton />
-        <MovieRowSkeleton />
+        <div className="relative z-20 -mt-32 space-y-12 pb-16">
+          <MovieRowSkeleton />
+          <MovieRowSkeleton />
+          <MovieRowSkeleton />
+        </div>
         <Footer />
       </div>
     );
   }
 
-  // ============ ERROR STATE ============
+  // ============ ERROR STATE (រក្សាទុកដដែល) ============
   if (error && banners.length === 0 && trendingMovies.length === 0) {
     return (
       <div className="min-h-screen bg-[#141414] flex items-center justify-center">
@@ -181,14 +202,14 @@ export default function HomePage() {
     <div className="min-h-screen bg-[#141414]">
       <Header />
 
-      {/* ============ HERO BANNER - Netflix Style (ពណ៌ច្បាស់ស្រស់ស្អាត) ============ */}
+      {/* ============ HERO BANNER - Netflix Style កែលម្អឱ្យស្អាតភ្លឺ ============ */}
       {bannerItems.length > 0 && (
         <section 
-          className="relative h-[100vh] overflow-hidden"
+          className="relative h-[95vh] md:h-[100vh] overflow-hidden"
           onMouseEnter={pauseBanner}
           onMouseLeave={resumeBanner}
         >
-          {/* Background Image with Crossfade */}
+          {/* Background Image with Smooth Crossfade */}
           <div className="absolute inset-0">
             {bannerItems.map((banner, index) => {
               const isActive = index === currentBannerIndex;
@@ -197,50 +218,62 @@ export default function HomePage() {
               return (
                 <div
                   key={banner.id || index}
-                  className={`absolute inset-0 transition-opacity duration-1000 ${isActive ? 'opacity-100' : 'opacity-0'}`}
+                  className={`absolute inset-0 transition-all duration-1000 ease-in-out ${
+                    isActive ? 'opacity-100 scale-100' : 'opacity-0 scale-105'
+                  }`}
                 >
                   <img
                     src={imageUrl}
                     alt={banner.title || banner.movie_title}
-                    className="w-full h-full object-cover object-center saturate-[1.25] contrast-[1.08] brightness-[1.03]"
-                    onLoad={() => isActive && setBannerImageLoaded(true)}
+                    className="w-full h-full object-cover object-center"
+                    loading={index === 0 ? 'eager' : 'lazy'}
                   />
                 </div>
               );
             })}
             
-            {/* Netflix-style Gradient Overlays — ពណ៌ក្រាដិនច្បាស់ និងស៊ីជម្រៅជាង */}
-            <div className="absolute inset-0 bg-gradient-to-r from-[#141414] via-[#141414]/70 to-transparent" />
-            <div className="absolute inset-0 bg-gradient-to-t from-[#141414] via-transparent to-[#141414]/50" />
-            <div className="absolute inset-x-0 bottom-0 h-48 bg-gradient-to-t from-[#141414] to-transparent" />
-            {/* កម្រិតពណ៌ក្រហម Netflix សម្រាប់ជម្រៅនិងភាពរស់រវើក */}
-            <div className="absolute inset-0 bg-gradient-to-tr from-[#E50914]/15 via-transparent to-transparent mix-blend-overlay" />
-            <div className="absolute inset-0 bg-black/10" />
+            {/* Netflix-style Gradient Overlays - កែលម្អឱ្យស្អាតជាងមុន */}
+            <div className="absolute inset-0 bg-gradient-to-r from-[#141414] via-[#141414]/60 to-transparent" />
+            <div className="absolute inset-0 bg-gradient-to-t from-[#141414] via-transparent to-[#141414]/40" />
+            <div className="absolute inset-x-0 bottom-0 h-64 bg-gradient-to-t from-[#141414] to-transparent" />
+            {/* ស្រទាប់ vignette សម្រាប់ភាពស៊ីជម្រៅ */}
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,_transparent_0%,_rgba(0,0,0,0.3)_100%)]" />
           </div>
 
           {/* Banner Content */}
           <div className="relative container mx-auto px-4 md:px-16 h-full flex flex-col justify-center">
             <div className="max-w-2xl pt-20">
               <div key={currentBannerIndex} className="animate-fade-in-up">
-                {/* Netflix-style Title */}
-                <h1 className="text-5xl md:text-6xl lg:text-7xl font-black text-white mb-4 leading-tight drop-shadow-2xl">
-                  {currentBanner?.title || currentBanner?.movie_title || 'រឿងថ្មី'}
+                {/* Movie Status Badge */}
+                {currentBanner?.access_type === 'free' && (
+                  <div className="inline-flex items-center gap-2 bg-green-600/90 text-white text-xs font-bold px-3 py-1 rounded-full mb-4">
+                    <i className="bi bi-star-fill"></i> ឥតគិតថ្លៃ
+                  </div>
+                )}
+                
+                {/* Netflix-style Title with Gradient */}
+                <h1 className="text-4xl md:text-6xl lg:text-7xl font-black text-white mb-4 leading-tight drop-shadow-2xl">
+                  <span className="bg-gradient-to-r from-white to-gray-300 bg-clip-text text-transparent">
+                    {currentBanner?.title || currentBanner?.movie_title || 'រឿងថ្មី'}
+                  </span>
                 </h1>
 
                 {/* Meta Info - Netflix Style */}
                 <div className="flex items-center gap-3 text-gray-300 mb-4 flex-wrap">
                   {currentBanner?.movie_rating && (
-                    <span className="text-green-400 font-bold">
-                      ត្រូវគ្នា {currentBanner.movie_rating}%
+                    <span className="text-green-400 font-bold flex items-center gap-1">
+                      <i className="bi bi-hand-thumbs-up-fill"></i>
+                      {currentBanner.movie_rating}%
                     </span>
                   )}
                   {currentBanner?.movie_year && (
                     <span>{currentBanner.movie_year}</span>
                   )}
-                  <span className="border border-gray-500 px-1.5 py-0.5 text-xs">HD</span>
-                  {currentBanner?.access_type === 'free' && (
-                    <span className="bg-green-600 text-white text-xs px-2 py-0.5 rounded">ឥតគិតថ្លៃ</span>
+                  {currentBanner?.duration && (
+                    <span>{currentBanner.duration} នាទី</span>
                   )}
+                  <span className="border border-gray-500 px-1.5 py-0.5 text-xs font-bold">HD</span>
+                  <span className="border border-gray-500 px-1.5 py-0.5 text-xs font-bold">4K</span>
                 </div>
 
                 {/* Description */}
@@ -258,7 +291,7 @@ export default function HomePage() {
                       if (movieId) handleWatchClick(movieId);
                       else handleBannerClick(currentBanner);
                     }}
-                    className="bg-white text-black font-bold py-3 px-8 rounded flex items-center gap-2 hover:bg-gray-200 transition-all"
+                    className="bg-white text-black font-bold py-3 px-8 rounded-lg flex items-center gap-2 hover:bg-gray-200 transition-all hover:scale-105"
                   >
                     <i className="bi bi-play-fill text-2xl"></i>
                     ចាក់មើល
@@ -267,7 +300,7 @@ export default function HomePage() {
                   {(currentBanner?.movie_id || currentBanner?.id) && (
                     <Link
                       to={`/movies/${currentBanner?.movie_id || currentBanner?.id}`}
-                      className="bg-gray-500/50 text-white font-bold py-3 px-6 rounded flex items-center gap-2 hover:bg-gray-500/70 transition-all backdrop-blur-sm"
+                      className="bg-gray-600/50 text-white font-bold py-3 px-6 rounded-lg flex items-center gap-2 hover:bg-gray-600/70 transition-all backdrop-blur-sm"
                     >
                       <i className="bi bi-info-circle text-xl"></i>
                       ព័ត៌មានបន្ថែម
@@ -280,23 +313,26 @@ export default function HomePage() {
 
           {/* Navigation Dots - Netflix Style */}
           {totalSlides > 1 && (
-            <div className="absolute bottom-24 right-8 z-20 flex items-center gap-3">
+            <div className="absolute bottom-24 right-8 z-20 flex items-center gap-2">
               {bannerItems.map((_, i) => (
                 <button
                   key={i}
                   onClick={() => {
-                    setCurrentBannerIndex(i);
-                    setBannerImageLoaded(false);
+                    setBannerTransition(true);
+                    setTimeout(() => {
+                      setCurrentBannerIndex(i);
+                      setBannerTransition(false);
+                    }, 300);
                     resumeBanner();
                   }}
                   className="group relative"
                   aria-label={`ស្លាយទី ${i + 1}`}
                 >
                   <div className={`
-                    h-1 rounded-full transition-all duration-500
+                    h-1.5 rounded-full transition-all duration-500
                     ${i === currentBannerIndex 
-                      ? 'w-12 bg-[#E50914] shadow-[0_0_8px_2px_rgba(229,9,20,0.7)]' 
-                      : 'w-4 bg-gray-500 group-hover:bg-gray-300'
+                      ? 'w-12 bg-[#E50914] shadow-[0_0_10px_2px_rgba(229,9,20,0.8)]' 
+                      : 'w-6 bg-gray-600 group-hover:bg-gray-400'
                     }
                   `} />
                 </button>
@@ -304,10 +340,10 @@ export default function HomePage() {
             </div>
           )}
 
-          {/* Mute Button */}
-          <button className="absolute bottom-24 right-4 md:right-24 z-20 w-12 h-12 border border-gray-500 rounded-full flex items-center justify-center text-gray-400 hover:text-white hover:border-white transition-colors bg-black/30 backdrop-blur-sm">
-            <i className="bi bi-volume-mute text-xl"></i>
-          </button>
+          {/* Sound Indicator - Decorative */}
+          <div className="absolute bottom-24 right-4 md:right-24 z-20 w-12 h-12 border border-gray-500 rounded-full flex items-center justify-center text-gray-400 bg-black/30 backdrop-blur-sm">
+            <i className="bi bi-volume-up text-xl"></i>
+          </div>
         </section>
       )}
 
@@ -315,31 +351,38 @@ export default function HomePage() {
       <main className="relative z-20 -mt-32">
         <div className="space-y-12 pb-16">
           
-          {/* Trending Now */}
-          <MovieRow
-            title="កំពុងពេញនិយម"
-            movies={trendingMovies}
-            loading={false}
-            onWatchClick={handleWatchClick}
-            linkTo="/movies?sort=popular"
-          />
-
-          {/* New Releases */}
+          {/* សំខាន់៖ បង្ហាញ Movie ថ្មីនៅលើគេបំផុត */}
           <MovieRow
             title="ចេញថ្មីៗ"
+            subtitle="រឿងថ្មីៗដែលទើបតែបន្ថែម"
             movies={newReleases}
             loading={false}
             onWatchClick={handleWatchClick}
             linkTo="/movies?sort=new"
+            icon="bi-stars"
+            highlightNew={true}
+          />
+
+          {/* Trending Now */}
+          <MovieRow
+            title="កំពុងពេញនិយម"
+            subtitle="រឿងដែលមនុស្សកំពុងមើលច្រើនជាងគេ"
+            movies={trendingMovies}
+            loading={false}
+            onWatchClick={handleWatchClick}
+            linkTo="/movies?sort=popular"
+            icon="bi-fire"
           />
 
           {/* Free Movies */}
           <MovieRow
             title="មើលឥតគិតថ្លៃ"
+            subtitle="រីករាយដោយមិនចាំបាច់ចំណាយ"
             movies={freeMovies}
             loading={false}
             onWatchClick={handleWatchClick}
             linkTo="/movies?type=free"
+            icon="bi-gift"
           />
 
           {/* Genre Rows */}
@@ -361,6 +404,7 @@ export default function HomePage() {
                 loading={false}
                 onWatchClick={handleWatchClick}
                 linkTo={`/movies?genre=${genre.id || genre.name}`}
+                icon="bi-collection"
               />
             );
           })}
@@ -368,8 +412,9 @@ export default function HomePage() {
           {/* VIP Banner - Netflix Style */}
           {!isVIP && (
             <section className="container mx-auto px-4 md:px-16">
-              <div className="relative overflow-hidden rounded-xl bg-gradient-to-r from-[#1a1a1a] to-[#2a2a2a] border border-gray-800 p-8 md:p-12">
+              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[#1a1a1a] to-[#2a2a2a] border border-gray-800 p-8 md:p-12">
                 <div className="absolute top-0 right-0 w-96 h-96 bg-[#E50914]/20 rounded-full blur-3xl" />
+                <div className="absolute bottom-0 left-0 w-64 h-64 bg-[#E50914]/10 rounded-full blur-3xl" />
                 
                 <div className="relative flex flex-col md:flex-row items-center justify-between gap-8">
                   <div>
@@ -382,7 +427,7 @@ export default function HomePage() {
                   </div>
                   <Link 
                     to="/pricing" 
-                    className="bg-[#E50914] hover:bg-[#f6121d] text-white font-bold px-8 py-4 rounded text-lg transition-all hover:scale-105 whitespace-nowrap shadow-[0_0_20px_rgba(229,9,20,0.4)]"
+                    className="bg-[#E50914] hover:bg-[#f6121d] text-white font-bold px-8 py-4 rounded-lg text-lg transition-all hover:scale-105 whitespace-nowrap shadow-[0_0_30px_rgba(229,9,20,0.5)]"
                   >
                     ទទួលបាន VIP
                   </Link>
@@ -401,9 +446,9 @@ export default function HomePage() {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
               {[
-                { icon: 'bi-collection-play', title: 'ភាពយន្តជាង ១០០០', desc: 'រីករាយជាមួយភាពយន្តខ្មែរ និងអន្តរជាតិជាច្រើន។' },
-                { icon: 'bi-badge-hd', title: 'គុណភាព HD & 4K', desc: 'ទស្សនាជាមួយគុណភាពខ្ពស់រហូតដល់ 4K Ultra HD។' },
-                { icon: 'bi-phone', title: 'មើលបានគ្រប់ឧបករណ៍', desc: 'មើលបាននៅលើទូរស័ព្ទ ថេប្លេត និងកុំព្យូទ័រ។' },
+                { icon: 'bi-collection-play-fill', title: 'ភាពយន្តជាង ១០០០', desc: 'រីករាយជាមួយភាពយន្តខ្មែរ និងអន្តរជាតិជាច្រើន។' },
+                { icon: 'bi-badge-hd-fill', title: 'គុណភាព HD & 4K', desc: 'ទស្សនាជាមួយគុណភាពខ្ពស់រហូតដល់ 4K Ultra HD។' },
+                { icon: 'bi-phone-fill', title: 'មើលបានគ្រប់ឧបករណ៍', desc: 'មើលបាននៅលើទូរស័ព្ទ ថេប្លេត និងកុំព្យូទ័រ។' },
               ].map((item, i) => (
                 <div key={i} className="group bg-[#1a1a1a] hover:bg-[#2a2a2a] rounded-xl p-6 md:p-8 transition-all duration-300 hover:scale-105 border border-transparent hover:border-gray-700">
                   <div className="w-14 h-14 md:w-16 md:h-16 bg-[#E50914]/10 group-hover:bg-[#E50914]/20 rounded-xl flex items-center justify-center mb-4 md:mb-6 transition-all">
@@ -423,8 +468,8 @@ export default function HomePage() {
   );
 }
 
-// ============ MOVIE ROW COMPONENT - Netflix Style ============
-function MovieRow({ title, movies, loading, onWatchClick, linkTo }) {
+// ============ MOVIE ROW COMPONENT - Netflix Style កែលម្អ ============
+function MovieRow({ title, subtitle, movies, loading, onWatchClick, linkTo, icon, highlightNew }) {
   const scrollContainerRef = useRef(null);
   const [showLeftArrow, setShowLeftArrow] = useState(false);
   const [showRightArrow, setShowRightArrow] = useState(true);
@@ -444,25 +489,38 @@ function MovieRow({ title, movies, loading, onWatchClick, linkTo }) {
     }
   };
 
+  useEffect(() => {
+    checkScroll();
+    window.addEventListener('resize', checkScroll);
+    return () => window.removeEventListener('resize', checkScroll);
+  }, [movies]);
+
   if (!loading && movies.length === 0) return null;
 
   return (
     <section className="relative group/row">
       <div className="container mx-auto px-4 md:px-16 mb-4">
-        <h2 className="text-xl md:text-2xl font-bold text-white hover:text-gray-300 transition-colors cursor-pointer inline-flex items-center gap-2">
-          {title}
+        <Link to={linkTo} className="inline-flex items-center gap-2 group/title">
+          <h2 className="text-xl md:text-2xl font-bold text-white group-hover/title:text-gray-300 transition-colors cursor-pointer">
+            <i className={`bi ${icon} text-[#E50914] mr-2`}></i>
+            {title}
+          </h2>
           <span className="text-gray-500 text-lg opacity-0 group-hover/row:opacity-100 transition-opacity">
             <i className="bi bi-chevron-right"></i>
           </span>
-        </h2>
+        </Link>
+        {subtitle && (
+          <p className="text-gray-500 text-sm mt-1">{subtitle}</p>
+        )}
       </div>
 
       <div className="relative">
         {/* Left Arrow */}
-        {showLeftArrow && (
+        {showLeftArrow && !loading && (
           <button
             onClick={() => scroll('left')}
             className="absolute left-0 top-0 bottom-0 z-30 w-12 bg-black/50 hover:bg-black/70 flex items-center justify-center transition-all opacity-0 group-hover/row:opacity-100"
+            aria-label="Scroll left"
           >
             <i className="bi bi-chevron-left text-white text-3xl"></i>
           </button>
@@ -473,7 +531,7 @@ function MovieRow({ title, movies, loading, onWatchClick, linkTo }) {
           <div className="container mx-auto px-4 md:px-16 flex gap-2 overflow-hidden">
             {[...Array(8)].map((_, i) => (
               <div key={i} className="flex-shrink-0 w-48 md:w-56 lg:w-64 animate-pulse">
-                <div className="aspect-video bg-[#2a2a2a] rounded"></div>
+                <div className="aspect-video bg-[#2a2a2a] rounded-lg"></div>
               </div>
             ))}
           </div>
@@ -483,8 +541,16 @@ function MovieRow({ title, movies, loading, onWatchClick, linkTo }) {
             onScroll={checkScroll}
             className="container mx-auto px-4 md:px-16 flex gap-2 overflow-x-auto scrollbar-hide scroll-smooth"
           >
-            {movies.slice(0, 12).map((movie) => (
-              <div key={movie.id} className="flex-shrink-0 w-48 md:w-56 lg:w-64 transition-transform duration-300 hover:scale-105">
+            {movies.slice(0, 12).map((movie, index) => (
+              <div 
+                key={movie.id} 
+                className="flex-shrink-0 w-48 md:w-56 lg:w-64 transition-transform duration-300 hover:scale-105 relative"
+              >
+                {highlightNew && index < 3 && (
+                  <div className="absolute top-2 left-2 z-10 bg-[#E50914] text-white text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
+                    <i className="bi bi-stars"></i> ថ្មី
+                  </div>
+                )}
                 <MovieCard movie={movie} />
               </div>
             ))}
@@ -492,10 +558,11 @@ function MovieRow({ title, movies, loading, onWatchClick, linkTo }) {
         )}
 
         {/* Right Arrow */}
-        {showRightArrow && (
+        {showRightArrow && !loading && (
           <button
             onClick={() => scroll('right')}
             className="absolute right-0 top-0 bottom-0 z-30 w-12 bg-black/50 hover:bg-black/70 flex items-center justify-center transition-all opacity-0 group-hover/row:opacity-100"
+            aria-label="Scroll right"
           >
             <i className="bi bi-chevron-right text-white text-3xl"></i>
           </button>
@@ -505,13 +572,16 @@ function MovieRow({ title, movies, loading, onWatchClick, linkTo }) {
   );
 }
 
-// ============ SKELETON COMPONENTS - Netflix Style ============
+// ============ SKELETON COMPONENTS - Netflix Style កែលម្អ ============
 function BannerSkeleton() {
   return (
-    <div className="relative h-[100vh] bg-[#1a1a1a] animate-pulse">
-      <div className="absolute bottom-40 left-16 space-y-4">
+    <div className="relative h-[95vh] md:h-[100vh] bg-gradient-to-b from-[#1a1a1a] to-[#141414] animate-pulse">
+      <div className="absolute inset-0 bg-gradient-to-r from-[#141414] via-transparent to-transparent" />
+      <div className="absolute bottom-40 left-4 md:left-16 space-y-4">
+        <div className="h-4 w-24 bg-[#E50914]/20 rounded-full"></div>
         <div className="h-16 w-96 bg-[#2a2a2a] rounded-lg"></div>
         <div className="h-4 w-64 bg-[#2a2a2a] rounded"></div>
+        <div className="h-4 w-48 bg-[#2a2a2a] rounded"></div>
         <div className="h-10 w-48 bg-[#2a2a2a] rounded-lg"></div>
       </div>
     </div>
@@ -522,10 +592,11 @@ function MovieRowSkeleton() {
   return (
     <section className="container mx-auto px-4 md:px-16">
       <div className="h-8 w-48 bg-[#2a2a2a] rounded mb-4 animate-pulse"></div>
+      <div className="h-4 w-32 bg-[#2a2a2a] rounded mb-4 animate-pulse"></div>
       <div className="flex gap-2 overflow-hidden">
         {[...Array(6)].map((_, i) => (
           <div key={i} className="flex-shrink-0 w-48 md:w-56 lg:w-64 animate-pulse">
-            <div className="aspect-video bg-[#2a2a2a] rounded"></div>
+            <div className="aspect-video bg-[#2a2a2a] rounded-lg"></div>
           </div>
         ))}
       </div>

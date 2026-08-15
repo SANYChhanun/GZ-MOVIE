@@ -5,20 +5,23 @@ from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Movie, Episode, Genre, Category, Cast, Crew, HeroBanner
+from .models import Movie, Episode, HeroBanner
 from .serializers import (
     MovieListSerializer,
     MovieDetailSerializer,
     MovieAdminSerializer,
     MovieVideoUploadInitSerializer,
     EpisodeSerializer,
-    GenreSerializer,
-    CategorySerializer,
-    CastSerializer,
-    CrewSerializer,
     HeroBannerSerializer,
     HeroBannerCreateUpdateSerializer,
 )
+# Genre/Category moved to apps.taxonomy -- the public genres/categories
+# actions on MovieViewSet below (used by dropdown filters, HomePage.jsx,
+# etc.) now read from there instead of apps.movies. Admin CRUD for these
+# also moved -- see apps/taxonomy/views.py + apps/taxonomy/urls.py,
+# included directly in the project's root urls.py.
+from apps.taxonomy.models import Genre, Category
+from apps.taxonomy.serializers import GenreSerializer, CategorySerializer
 from .filters import MovieFilter
 from .permissions import MovieAccessPermission, IsAdminOrReadOnly
 
@@ -102,14 +105,14 @@ class MovieViewSet(viewsets.ReadOnlyModelViewSet):
 
     @action(detail=False, methods=['get'])
     def genres(self, request):
-        """Return all genres (for filter dropdowns)."""
+        """Return all genres (for filter dropdowns). Genre now lives in apps.taxonomy."""
         genres = Genre.objects.all().order_by('name')
         serializer = GenreSerializer(genres, many=True)
         return Response(serializer.data)
 
     @action(detail=False, methods=['get'])
     def categories(self, request):
-        """Return all categories."""
+        """Return all categories. Category now lives in apps.taxonomy."""
         categories = Category.objects.all().order_by('name')
         serializer = CategorySerializer(categories, many=True)
         return Response(serializer.data)
@@ -244,31 +247,3 @@ class MovieAdminViewSet(viewsets.ModelViewSet):
         serializer.is_valid(raise_exception=True)
         credentials = serializer.save()
         return Response(credentials)
-
-
-class GenreAdminViewSet(viewsets.ModelViewSet):
-    queryset = Genre.objects.all().order_by('name')
-    serializer_class = GenreSerializer
-    permission_classes = [IsAdminUser]
-    pagination_class = None
-
-
-class CategoryAdminViewSet(viewsets.ModelViewSet):
-    queryset = Category.objects.all().order_by('name')
-    serializer_class = CategorySerializer
-    permission_classes = [IsAdminUser]
-    pagination_class = None
-
-
-class CastAdminViewSet(viewsets.ModelViewSet):
-    queryset = Cast.objects.all().order_by('name')
-    serializer_class = CastSerializer
-    permission_classes = [IsAdminUser]
-    search_fields = ['name', 'character_name']
-
-
-class CrewAdminViewSet(viewsets.ModelViewSet):
-    queryset = Crew.objects.all().order_by('name')
-    serializer_class = CrewSerializer
-    permission_classes = [IsAdminUser]
-    search_fields = ['name', 'role']

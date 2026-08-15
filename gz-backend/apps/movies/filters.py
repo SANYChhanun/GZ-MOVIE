@@ -1,5 +1,8 @@
 import django_filters
-from .models import Movie, Genre, Category
+from .models import Movie
+# Genre/Category moved to apps.taxonomy -- import from there instead of
+# apps.movies.models, which no longer defines them.
+from apps.taxonomy.models import Genre, Category
 
 
 class MovieFilter(django_filters.FilterSet):

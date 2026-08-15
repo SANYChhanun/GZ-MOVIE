@@ -12,20 +12,24 @@ export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    setLocalError('');
-    setIsSubmitting(true);
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  setLocalError('');
+  setIsSubmitting(true);
 
-    const result = await login(username, password);
-    setIsSubmitting(false);
+  const result = await login(username, password);
+  setIsSubmitting(false);
 
-    if (result.success) {
-      navigate('/');
+  if (result.success) {
+    if (result.user?.role === 'ADMIN') {
+      navigate('/admin');       // ★ Admin → /admin
     } else {
-      setLocalError(result.error || 'ការចូលគណនីបរាជ័យ');
+      navigate('/');            // User ធម្មតា → home
     }
-  };
+  } else {
+    setLocalError(result.error || 'ការចូលគណនីបរាជ័យ');
+  }
+};
 
   return (
     <div className="min-h-screen bg-[#0A0A0A] flex items-center justify-center p-4 font-khmer">

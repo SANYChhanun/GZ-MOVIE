@@ -29,19 +29,19 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-  const login = async (username, password) => {
-    try {
-      const response = await authApi.login({ username, password });
-      const { access, refresh } = response.data;
-      localStorage.setItem('gz_access_token', access);
-      localStorage.setItem('gz_refresh_token', refresh);
-      const profile = await authApi.getProfile();
-      setUser(profile.data);
-      return { success: true };
-    } catch (err) {
-      return { success: false, error: err.response?.data?.detail || 'ការចូលគណនីបរាជ័យ' };
-    }
-  };
+const login = async (username, password) => {
+  try {
+    const response = await authApi.login({ username, password });
+    const { access, refresh } = response.data;
+    localStorage.setItem('gz_access_token', access);
+    localStorage.setItem('gz_refresh_token', refresh);
+    const profile = await authApi.getProfile();
+    setUser(profile.data);
+    return { success: true, user: profile.data };   // ★ បន្ថែម user
+  } catch (err) {
+    return { success: false, error: err.response?.data?.detail || 'ការចូលគណនីបរាជ័យ' };
+  }
+};
 
   const register = async (userData) => {
     try {
