@@ -83,10 +83,6 @@ MIDDLEWARE = [
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 
     'common.middleware.RequestLoggingMiddleware',
-    # ★ FIX #4b: "django.middleware.security.SecurityMiddleware" was
-    # listed twice (also at the top of this list). Running it twice per
-    # request is dead weight, not a real vulnerability — removed so the
-    # chain matches what's actually intended.
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -112,25 +108,12 @@ ASGI_APPLICATION = "config.asgi.application"
 
 
 # --- Database ---
-# Phase 0: ប្រើ SQLite ជាមុនសិន ដើម្បីងាយស្រួល develop លឿន។
-# នៅ Production (Phase 8) ត្រូវប្តូរទៅ PostgreSQL វិញ (uncomment ខាងក្រោម + ដាក់ .env)
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",
         "NAME": BASE_DIR / "db.sqlite3",
     }
 }
-
-# DATABASES = {
-#     "default": {
-#         "ENGINE": os.getenv("DB_ENGINE", "django.db.backends.postgresql"),
-#         "NAME": os.getenv("DB_NAME"),
-#         "USER": os.getenv("DB_USER"),
-#         "PASSWORD": os.getenv("DB_PASSWORD"),
-#         "HOST": os.getenv("DB_HOST", "localhost"),
-#         "PORT": os.getenv("DB_PORT", "5432"),
-#     }
-# }
 
 
 # --- Password validation ---
@@ -159,18 +142,24 @@ MEDIA_ROOT = BASE_DIR / "media"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
+# --- File Upload Settings (សម្រាប់ upload វីដេអូធំៗ) ---
+# អនុញ្ញាតឲ្យ upload ឯកសារធំរហូតដល់ 50GB
+DATA_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024 * 1024  # 50GB
+FILE_UPLOAD_MAX_MEMORY_SIZE = 50 * 1024 * 1024 * 1024  # 50GB
+DATA_UPLOAD_MAX_NUMBER_FIELDS = 10000
+
+# ប្រើ TemporaryFileUploadHandler ដើម្បីរក្សាទុកឯកសារធំក្នុង disk ជំនួស memory
+FILE_UPLOAD_HANDLERS = [
+    'django.core.files.uploadhandler.TemporaryFileUploadHandler',
+]
+
+
 # --- Django REST Framework ---
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
         "rest_framework_simplejwt.authentication.JWTAuthentication",
         "rest_framework.authentication.SessionAuthentication",
     ),
-    # ★ FIX #4c: "IsAuthenticatedOrReadOnly" as the PROJECT-WIDE default
-    # means any new view that forgets to set its own permission_classes
-    # silently allows anonymous GET requests. Switched to deny-by-default
-    # (IsAuthenticated) — endpoints that should stay public (movie list,
-    # FAQs, banners, etc.) already set permission_classes = [] or
-    # [AllowAny] explicitly in their own views.
     "DEFAULT_PERMISSION_CLASSES": (
         "rest_framework.permissions.IsAuthenticated",
     ),
@@ -179,32 +168,12 @@ REST_FRAMEWORK = {
     ),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
-    # ------------------------
     'EXCEPTION_HANDLER': 'common.exceptions.custom_exception_handler',
     'DEFAULT_PAGINATION_CLASS': 'common.pagination.StandardResultsSetPagination',
-
 }
 
 # --- Simple JWT ---
 SIMPLE_JWT = {
-    # ★ FIX #4d (superseded below): 2 hours was long for an access
-    # token — if one leaks (XSS, log, proxy) it stays valid that whole
-    # time. 30 min + the existing 7-day rotating/blacklisted refresh
-    # token keeps the same UX (silent refresh) with a much smaller
-    # exposure window.
-    #
-    # ★ FIX #9: 30 minutes turned out to be shorter than large video
-    # uploads take over TUS (browser -> Bunny Stream directly). The
-    # access token used for the movie-save request is the same one
-    # issued when the admin panel loaded; once it expired mid-upload,
-    # the save request that followed the (successful) video upload got
-    # a 401 and the movie was silently never created -- "large movie
-    # upload appears to do nothing, small ones work fine".
-    #
-    # Bumped to 6 hours as a pragmatic fix for admin-only endpoints
-    # (this token is only ever used by IsAdminUser-gated views). If you
-    # add proactive token refresh in the frontend before the save step
-    # (see AddMovieDrawer.jsx), you can safely lower this back down.
     "ACCESS_TOKEN_LIFETIME": timedelta(hours=6),
     "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
     "ROTATE_REFRESH_TOKENS": True,
@@ -222,10 +191,6 @@ CORS_ALLOWED_ORIGINS = os.getenv(
 ).split(",")
 CORS_ALLOW_CREDENTIALS = True
 
-# ★ FIX #4e: production-only hardening. None of this was present before —
-# without it, cookies can be read/sent over plain HTTP and there's no
-# HSTS, so a MITM on an unencrypted connection could hijack sessions.
-# Guarded by `if not DEBUG` so local development is unaffected.
 if not DEBUG:
     SECURE_SSL_REDIRECT = True
     SESSION_COOKIE_SECURE = True
@@ -235,6 +200,7 @@ if not DEBUG:
     SECURE_HSTS_PRELOAD = True
     SECURE_BROWSER_XSS_FILTER = True
     SECURE_CONTENT_TYPE_NOSNIFF = True
+
 
 #=========================================================
 
@@ -256,6 +222,11 @@ LOGGING = {
             'class': 'logging.StreamHandler',
             'formatter': 'simple',
         },
+        'file': {
+            'class': 'logging.FileHandler',
+            'filename': BASE_DIR / 'debug.log',
+            'formatter': 'verbose',
+        },
     },
     'loggers': {
         'request.middleware': {
@@ -264,30 +235,27 @@ LOGGING = {
             'propagate': False,
         },
         'django': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file'],
             'level': 'INFO',
+        },
+        'apps.movies': {
+            'handlers': ['console', 'file'],
+            'level': 'DEBUG',
+            'propagate': False,
         },
     },
 }
 
-# ★ FIX #8 (CRITICAL): these were referenced directly in
-# apps/streaming/services/bunny_token_service.py as
-# settings.BUNNY_STREAM_LIBRARY_ID / settings.BUNNY_STREAM_API_KEY, but
-# were NEVER actually defined anywhere in this file before. Since
-# bunny_token_service.py reads them with no default, EVERY call to
-# BunnyTokenService() (i.e. every attempt to play any video) was
-# crashing with AttributeError. Also used by BunnyUploadService
-# (apps/movies/services/bunny_upload_service.py) for the admin
-# "create movie" video upload flow.
-#
-# ★ Reads from BUNNY_API_KEY / BUNNY_LIBRARY_ID / BUNNY_CDN_HOSTNAME —
-# matching the actual variable names in .env.
-BUNNY_STREAM_LIBRARY_ID = os.getenv("BUNNY_LIBRARY_ID", "")
-BUNNY_STREAM_API_KEY = os.getenv("BUNNY_API_KEY", "")
 
-# .env stores the hostname without a scheme (e.g. "vz-xxx.b-cdn.net"),
-# but bunny_token_service.py builds URLs as f"{hostname}/{video_id}/...",
-# so it needs the "https://" prefix — added here defensively.
+# --- Bunny Stream Configuration ---
+BUNNY_STREAM_LIBRARY_ID = os.getenv("BUNNY_LIBRARY_ID", "").strip()
+BUNNY_STREAM_API_KEY = os.getenv("BUNNY_API_KEY", "").strip()
+
+# Debug: ពិនិត្យមើលថាតម្លៃត្រូវបានអានពី .env ត្រឹមត្រូវ
+if DEBUG:
+    print(f"[Bunny Config] Library ID: {BUNNY_STREAM_LIBRARY_ID}")
+    print(f"[Bunny Config] API Key length: {len(BUNNY_STREAM_API_KEY) if BUNNY_STREAM_API_KEY else 0}")
+
 _bunny_hostname = os.getenv("BUNNY_CDN_HOSTNAME", "")
 if _bunny_hostname and not _bunny_hostname.startswith(("http://", "https://")):
     _bunny_hostname = f"https://{_bunny_hostname}"

@@ -47,7 +47,13 @@ class BunnyStreamService:
       1. create_video(title)                    -> guid
       2. get_tus_upload_credentials(guid)        -> signature/expiry/etc.
       3. (frontend) tus-js-client uploads directly to Bunny using those
-         credentials, with resume-on-failure built in.
+         credentials, with resume-on-failure built in. tus-js-client
+         handles the full two-step TUS protocol itself: POST to create
+         the upload resource (using the LibraryId/VideoId/Authorization*
+         headers below), then PATCH chunks to the Location it gets back.
+         Do NOT hand-roll this with a single XHR PATCH -- Bunny will
+         reject it with "Invalid file id" because the upload resource
+         was never created via the required POST step first.
     """
 
     BASE_URL = "https://video.bunnycdn.com/library"
@@ -59,7 +65,9 @@ class BunnyStreamService:
 
     @classmethod
     def _library_id(cls):
-        return settings.BUNNY_STREAM_LIBRARY_ID
+        library_id = settings.BUNNY_STREAM_LIBRARY_ID
+        # ត្រូវប្រាកដថាមិនមានចន្លោះ ឬតួអក្សរពិសេស
+        return str(library_id).strip()
 
     @classmethod
     def _api_key(cls):
@@ -136,16 +144,12 @@ class BunnyStreamService:
     @classmethod
     def get_tus_upload_credentials(cls, video_id: str, expiration_seconds: int = 3600) -> dict:
         """
-        Returns everything a browser-side TUS client (e.g. tus-js-client)
-        needs to upload directly to Bunny Stream for the given video_id —
-        no video bytes ever pass through our server.
+        Returns everything a browser-side TUS client (tus-js-client)
+        needs to upload directly to Bunny Stream for the given video_id
+        -- no video bytes ever pass through our server.
 
         Bunny's required signature is:
             SHA256(library_id + api_key + expiration_time + video_id)
-
-        Raises RuntimeError if Bunny credentials aren't configured, since
-        callers (a DRF view/serializer) need a real error to surface to
-        the admin, not a silently broken upload.
         """
         library_id = cls._library_id()
         api_key = cls._api_key()
@@ -155,12 +159,33 @@ class BunnyStreamService:
                 "(see config/settings.py)."
             )
 
-        expiration_time = int(time.time()) + expiration_seconds
-        raw = f"{library_id}{api_key}{expiration_time}{video_id}"
-        signature = hashlib.sha256(raw.encode()).hexdigest()
+        expiration_time = str(int(time.time()) + expiration_seconds)
+
+        # Bunny Stream signature calculation
+        signature_string = f"{library_id}{api_key}{expiration_time}{video_id}"
+        signature = hashlib.sha256(signature_string.encode()).hexdigest()
+
+        # ★ FIX: the endpoint must be the plain TUS creation URL --
+        # https://video.bunnycdn.com/tusupload -- with NO library_id or
+        # video_id appended to the path. Those go in the LibraryId /
+        # VideoId headers instead (see tus-js-client config on the
+        # frontend). This matches Bunny's official TUS docs exactly:
+        # https://docs.bunny.net/stream/tus-resumable-uploads
+        #
+        # A previous version of this method appended
+        # f"{TUS_ENDPOINT}/{library_id}/{video_id}", which made
+        # tus-js-client's upload-creation POST hit a URL Bunny doesn't
+        # recognize (404). A separate hand-rolled single-PATCH
+        # implementation on the frontend, sent straight to that same
+        # malformed URL, skipped the required TUS "create the upload
+        # resource" POST step entirely -- which is why Bunny then
+        # rejected it with "400 Invalid file id": from Bunny's point of
+        # view, no upload resource with that id was ever created via the
+        # correct two-step protocol.
+        endpoint = cls.TUS_ENDPOINT
 
         return {
-            "endpoint": cls.TUS_ENDPOINT,
+            "endpoint": endpoint,
             "video_id": video_id,
             "library_id": library_id,
             "signature": signature,

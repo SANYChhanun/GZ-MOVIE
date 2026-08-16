@@ -1,6 +1,5 @@
-# apps/taxonomy/views.py
-from rest_framework import viewsets
-from rest_framework.permissions import IsAdminUser
+﻿from rest_framework import viewsets
+from apps.accounts.permissions import IsAdminUser
 from .models import Genre, Category, Cast, Crew
 from .serializers import GenreSerializer, CategorySerializer, CastSerializer, CrewSerializer
 

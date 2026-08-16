@@ -15,7 +15,20 @@ import { inputClass } from "../../utils/constants";
 //   2. tus-js-client uploads the actual file straight to Bunny using
 //      those credentials, in resumable chunks -- if the connection
 //      drops mid-upload, it resumes from the last chunk instead of
-//      restarting from zero.
+//      restarting from zero. TUS is a two-step protocol (POST to create
+//      the upload resource + get a Location, then PATCH chunks to that
+//      Location) -- tus-js-client implements this correctly.
+//
+//      ⚠️ DO NOT replace this with a hand-rolled XHR/fetch PATCH call.
+//      That has been tried twice in this project and failed both times:
+//        - Skipping the creation POST and PATCHing straight to the TUS
+//          endpoint => Bunny returns 400 "Invalid file id" (no upload
+//          resource was ever created for that id).
+//        - Sending the whole file in a single PATCH also throws away
+//          the entire point of using TUS: chunked, resumable upload.
+//      If tus-js-client is missing from node_modules, run
+//      `npm install tus-js-client` -- don't reimplement the protocol
+//      by hand.
 //   3. Once that finishes we have a Bunny `video_id` (guid). We send
 //      that as `bunny_video_id` in the normal create/update request
 //      alongside the rest of the movie's fields -- MovieAdminSerializer
@@ -391,18 +404,23 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [videoPreview]);
 
-  // Uploads `file` straight to Bunny Stream via TUS. Resolves with the
-  // resulting Bunny video guid. Never touches our own server with the
-  // file bytes -- see the note at the top of this file.
+  // Uploads `file` straight to Bunny Stream via TUS (resumable, chunked),
+  // using tus-js-client -- which correctly implements the two-step TUS
+  // protocol (POST to create the upload resource, THEN PATCH chunks to
+  // the Location it returns) -- rather than a hand-rolled single PATCH.
+  //
+  // ⚠️ DO NOT replace this with a hand-rolled XHR/fetch PATCH call.
+  // That has been tried twice now and failed both times:
+  //   - Skipping the creation POST and PATCHing straight to the TUS
+  //     endpoint => Bunny returns 400 "Invalid file id" (no upload
+  //     resource was ever created for that id).
+  //   - Sending the whole file in a single PATCH also throws away the
+  //     entire point of using TUS: chunked, resumable upload.
+  // tus-js-client handles all of this correctly. If it's missing from
+  // node_modules, run `npm install tus-js-client` -- don't reimplement
+  // the protocol by hand.
   const uploadVideoDirectToBunny = (file, title) =>
     new Promise((resolve, reject) => {
-      // Whole body wrapped in try/catch: if ANY step here throws
-      // synchronously (tus.Upload construction, findPreviousUploads,
-      // start), it must reject this promise -- otherwise the error is
-      // swallowed inside this async IIFE, the outer promise never
-      // settles, and `await uploadVideoDirectToBunny(...)` hangs
-      // forever with no visible error (which is what large-file
-      // uploads were doing).
       (async () => {
         try {
           console.log("[bunny-upload] requesting TUS credentials…", {
@@ -414,6 +432,7 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
           const res = await adminApi.initVideoUpload({ title });
           const creds = res.data;
           console.log("[bunny-upload] got credentials", creds);
+          console.log("[bunny-upload] endpoint:", creds.endpoint);
 
           const upload = new tus.Upload(file, {
             endpoint: creds.endpoint,
@@ -455,8 +474,6 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
           console.log("[bunny-upload] calling upload.start()…");
           upload.start();
         } catch (err) {
-          // Catches: initVideoUpload network/HTTP errors, and any sync
-          // error from setting up or starting the tus upload itself.
           console.error("[bunny-upload] setup failed:", err);
           console.error("status:", err?.response?.status, "data:", err?.response?.data);
           const detail = err?.response?.status
@@ -567,6 +584,9 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     if (imageFile) fd.append("poster", imageFile);
     if (backdropFile) fd.append("backdrop", backdropFile);
     if (finalBunnyVideoId) {
+      // Either the direct-to-Bunny upload in Step 1 just succeeded, or
+      // this is an edit where the movie already had a video and nothing
+      // changed about it.
       fd.append("bunny_video_id", finalBunnyVideoId);
     } else if (videoCleared) {
       // Explicit empty string, distinct from simply not sending the field —
