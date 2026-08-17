@@ -1,4 +1,4 @@
-// src/components/movie/MovieCard.jsx — Netflix Style Card (Complete)
+// src/components/movie/MovieCard.jsx — Netflix Style Card (Fixed)
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -9,17 +9,39 @@ export default function MovieCard({ movie, listView = false }) {
   const [imageError, setImageError] = useState(false);
   const { user } = useAuth();
 
+  // ============ HELPER: Get Poster URL ============
+  const getPosterUrl = () => {
+    if (!movie) return null;
+    
+    // Try multiple possible field names
+  const imageUrl = movie.poster_url || movie.poster || movie.backdrop_url || movie.backdrop || '/images/placeholder.jpg';
+    
+    if (!imageUrl) return null;
+    
+    // If it's already a full URL, return as is
+    if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
+      return imageUrl;
+    }
+    
+    // If it's a relative path, prepend the base URL
+    const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+    const cleanBase = baseUrl.replace(/\/$/, '');
+    const cleanPoster = imageUrl.startsWith('/') ? imageUrl : `/${imageUrl}`;
+    
+    return `${cleanBase}${cleanPoster}`;
+  };
+
   // Destructure movie data with fallbacks
-  const posterUrl = movie.poster_url || movie.poster || movie.thumbnail;
-  const title = movie.title || movie.name || 'គ្មានចំណងជើង';
-  const rating = movie.rating ? Number(movie.rating).toFixed(1) : null;
-  const year = movie.release_date?.split('-')[0] || movie.year || '';
-  const duration = movie.duration || null;
-  const genres = movie.genres || [];
-  const isFree = movie.access_type === 'free';
-  const isMember = movie.access_type === 'member';
-  const isNew = movie.is_new_release || false;
-  const description = movie.short_description || movie.description || '';
+  const posterUrl = getPosterUrl();  // ← ប្រើ function នេះ
+  const title = movie?.title || movie?.name || 'គ្មានចំណងជើង';
+  const rating = movie?.rating ? Number(movie.rating).toFixed(1) : null;
+  const year = movie?.release_date?.split('-')[0] || movie?.year || '';
+  const duration = movie?.duration || null;
+  const genres = movie?.genres || [];
+  const isFree = movie?.access_type === 'free';
+  const isMember = movie?.access_type === 'member';
+  const isNew = movie?.is_new_release || false;
+  const description = movie?.short_description || movie?.description || '';
 
   // Only show badge for VIP or Paid (Free is default, no badge needed)
   const showAccessBadge = !isFree;
@@ -54,7 +76,7 @@ export default function MovieCard({ movie, listView = false }) {
                 loading="lazy"
               />
             ) : (
-              <div className="w-full h-full flex items-center justify-center">
+              <div className="w-full h-full flex items-center justify-center bg-gray-800">
                 <i className="bi bi-film text-2xl text-gray-600"></i>
               </div>
             )}
@@ -131,9 +153,9 @@ export default function MovieCard({ movie, listView = false }) {
           )}
 
           {/* ============ MAIN POSTER IMAGE ============ */}
-          {!imageError && (
+          {!imageError && posterUrl && (
             <img
-              src={posterUrl || '/images/placeholder-poster.jpg'}
+              src={posterUrl}
               alt={title}
               className={`
                 absolute inset-0 w-full h-full object-cover transition-all duration-700
@@ -145,6 +167,16 @@ export default function MovieCard({ movie, listView = false }) {
               onError={() => setImageError(true)}
               loading="lazy"
             />
+          )}
+
+          {/* ============ FALLBACK WHEN NO POSTER ============ */}
+          {!posterUrl && (
+            <div className="absolute inset-0 bg-gradient-to-br from-gray-800 to-gray-900 flex flex-col items-center justify-center gap-3 z-10">
+              <div className="w-16 h-16 bg-gray-700/50 rounded-2xl flex items-center justify-center">
+                <i className="bi bi-film text-3xl text-gray-500"></i>
+              </div>
+              <span className="text-xs text-gray-500 text-center px-3 line-clamp-2">{title}</span>
+            </div>
           )}
 
           {/* ============ GRADIENT OVERLAYS ============ */}

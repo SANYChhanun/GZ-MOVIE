@@ -28,15 +28,9 @@ const adminApi = {
 getMovies: (params) => axiosClient.get("/admin/movies/", { params }),
 getMovie: (id) => axiosClient.get(`/admin/movies/${id}/`),
 createMovie: (formData, config = {}) =>
-    axiosClient.post("/admin/movies/", formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        ...config,
-    }),
+    axiosClient.post("/admin/movies/", formData, config),
 updateMovie: (id, formData, config = {}) =>
-    axiosClient.patch(`/admin/movies/${id}/`, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        ...config,
-    }),
+    axiosClient.patch(`/admin/movies/${id}/`, formData, config),
 deleteMovie: (id) => axiosClient.delete(`/admin/movies/${id}/`),
 
 // Step 1 of the direct-to-Bunny TUS upload flow — gets signed

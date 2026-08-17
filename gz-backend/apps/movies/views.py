@@ -73,6 +73,15 @@ class MovieViewSet(viewsets.ReadOnlyModelViewSet):
             return [AllowAny()]
         return [IsAdminUser()]
 
+    def get_serializer_context(self):
+        """
+        Pass request to serializer so _user_can_watch() can access
+        the current user.
+        """
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
     # ========== CUSTOM ACTIONS ==========
 
     @action(detail=False, methods=['get'])
@@ -203,6 +212,8 @@ class HeroBannerViewSet(viewsets.ModelViewSet):
 # ADMIN ENDPOINTS
 # ============================================================
 
+# apps/movies/views.py
+
 class MovieAdminViewSet(viewsets.ModelViewSet):
     """
     Admin CRUD for movies.
@@ -210,19 +221,21 @@ class MovieAdminViewSet(viewsets.ModelViewSet):
     queryset = Movie.objects.all().prefetch_related('genres', 'categories', 'cast', 'crew')
     serializer_class = MovieAdminSerializer
     permission_classes = [IsAdminUser]
-    # NOTE: JSONParser is needed alongside MultiPartParser/FormParser
-    # because init_video_upload() below receives a plain JSON body
-    # ({"title": "..."}), not multipart form data like the rest of this
-    # viewset's create/update calls (which still carry poster/backdrop
-    # files, and video_upload for the legacy path).
     parser_classes = [MultiPartParser, FormParser, JSONParser]
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = MovieFilter
     search_fields = ['title', 'description']
     ordering_fields = ['release_date', 'rating', 'view_count', 'created_at', 'title']
 
+    # ✅ បន្ថែម method នេះ
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
     @action(detail=False, methods=['post'], url_path='init-video-upload')
     def init_video_upload(self, request):
+        # ... existing code ...
         """
         Step 1 of the direct-to-Bunny (TUS) video upload flow.
 

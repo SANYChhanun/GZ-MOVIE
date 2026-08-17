@@ -211,9 +211,22 @@ export default function HomePage() {
         >
           {/* Background Image with Smooth Crossfade */}
           <div className="absolute inset-0">
-            {bannerItems.map((banner, index) => {
+                       {bannerItems.map((banner, index) => {
               const isActive = index === currentBannerIndex;
-              const imageUrl = banner.image || banner.backdrop || banner.poster_url || banner.poster || '/images/placeholder-banner.jpg';
+              
+              // ប្រើ poster_url ឬ backdrop_url ជំនួស poster និង backdrop
+              const imageUrl = 
+                banner.image || 
+                banner.backdrop_url || 
+                banner.backdrop || 
+                banner.poster_url || 
+                banner.poster || 
+                banner.movie_backdrop || 
+                banner.movie_poster || 
+                '/images/placeholder-banner.jpg';
+              
+              console.log(`[HomePage Banner ${index}] imageUrl:`, imageUrl);
+              console.log(`[HomePage Banner ${index}] banner:`, banner);
               
               return (
                 <div

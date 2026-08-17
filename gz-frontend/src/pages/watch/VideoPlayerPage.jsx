@@ -1,8 +1,8 @@
-// src/pages/watch/VideoPlayerPage.jsx
+// src/pages/watch/VideoPlayerPage.jsx — Full Code with Bootstrap Icons
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
-import { moviesApi } from '../../api/moviesApi';
+import moviesApi from '../../api/moviesApi';
 
 const BUNNY_LIBRARY_ID = '724838';
 
@@ -13,41 +13,88 @@ export default function VideoPlayerPage() {
   const [embedUrl, setEmbedUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showControls, setShowControls] = useState(true);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
+ // src/pages/watch/VideoPlayerPage.jsx
+
+useEffect(() => {
+  const fetchMovie = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await moviesApi.getMovie(id);
+      const data = res.data;
+      setMovie(data);
+
+      console.log('🎬 Movie data:', data);
+      console.log('📹 video_file:', data.video_file);
+      console.log('🆔 bunny_video_id:', data.bunny_video_id);
+      console.log('📺 video_embed_url:', data.video_embed_url);
+
+      // ✅ ពិនិត្យប្រភពវីដេអូតាមលំដាប់
+      let videoUrl = data.video_embed_url || data.video_file;
+      
+      if (!videoUrl && data.bunny_video_id) {
+        videoUrl = `https://iframe.mediadelivery.net/embed/724838/${data.bunny_video_id}`;
+      }
+
+      // ✅ បន្ថែម autoplay និង disableCast
+      if (videoUrl && videoUrl.includes('mediadelivery.net')) {
+        const separator = videoUrl.includes('?') ? '&' : '?';
+        videoUrl = `${videoUrl}${separator}autoplay=1&disableCast=1`;
+      }
+
+      setEmbedUrl(videoUrl);
+
+      if (!videoUrl) {
+        console.warn('⚠️ No video found for movie:', data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch movie:', err);
+      setError('មិនអាចទាញយកទិន្នន័យរឿងបានទេ។');
+    } finally {
+      setLoading(false);
+    }
+  };
+  fetchMovie();
+}, [id]);
+
+  // Handle fullscreen toggle
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen();
+      setIsFullscreen(true);
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+        setIsFullscreen(false);
+      }
+    }
+  };
+
+  // Handle keyboard shortcuts
   useEffect(() => {
-    const fetchMovie = async () => {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await moviesApi.getMovie(id);
-        const data = res.data;
-        setMovie(data);
-
-        // ✅ ពិនិត្យប្រភពវីដេអូតាមលំដាប់
-        if (data.bunny_video_id) {
-          // Bunny.net Stream Embed
-          setEmbedUrl(`https://iframe.mediadelivery.net/embed/${BUNNY_LIBRARY_ID}/${data.bunny_video_id}`);
-        } else if (data.video_file) {
-          // URL វីដេអូ (Bunny.net CDN URL)
-          setEmbedUrl(data.video_file);
-        } else if (data.video_upload) {
-          // ✅ Video Upload ផ្ទាល់
-          // បើជា relative path បន្ថែម base URL
-          const baseUrl = import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || 'http://localhost:8000';
-          const videoUrl = data.video_upload.startsWith('http') 
-            ? data.video_upload 
-            : `${baseUrl}${data.video_upload}`;
-          setEmbedUrl(videoUrl);
-        }
-      } catch (err) {
-        console.error('Failed to fetch movie:', err);
-        setError('មិនអាចទាញយកទិន្នន័យរឿងបានទេ។');
-      } finally {
-        setLoading(false);
+    const handleKeyDown = (e) => {
+      if (e.key === 'f' || e.key === 'F') {
+        toggleFullscreen();
+      }
+      if (e.key === 'Escape') {
+        setShowControls(true);
       }
     };
-    fetchMovie();
-  }, [id]);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
+
+  // Auto-hide controls after 3 seconds
+  useEffect(() => {
+    let timeout;
+    if (embedUrl) {
+      timeout = setTimeout(() => setShowControls(false), 3000);
+    }
+    return () => clearTimeout(timeout);
+  }, [embedUrl]);
 
   // ============ LOADING ============
   if (loading) {
@@ -66,6 +113,7 @@ export default function VideoPlayerPage() {
           <i className="bi bi-exclamation-triangle text-6xl text-yellow-500 mb-4 block"></i>
           <p className="text-lg">{error}</p>
           <Link to={`/movies/${id}`} className="text-red-500 hover:underline mt-4 inline-block">
+            <i className="bi bi-arrow-left me-2"></i>
             ត្រឡប់ទៅទំព័ររឿង
           </Link>
         </div>
@@ -87,6 +135,11 @@ export default function VideoPlayerPage() {
             <i className="bi bi-film text-6xl text-gray-600 mb-4 block"></i>
             <p className="text-lg">មិនមានវីដេអូសម្រាប់ភាពយន្តនេះទេ</p>
             <p className="text-gray-500 text-sm mt-2">សូមពិនិត្យម្តងទៀតនៅពេលក្រោយ</p>
+            <p className="text-gray-600 text-xs mt-4">
+              bunny_video_id: {movie?.bunny_video_id || 'None'}
+              <br />
+              video_file: {movie?.video_file || 'None'}
+            </p>
           </div>
         </div>
       </div>
@@ -95,32 +148,64 @@ export default function VideoPlayerPage() {
 
   // ============ VIDEO PLAYER ============
   const isDirectVideo = embedUrl.match(/\.(mp4|mov|mkv|webm)(\?|$)/i) || 
-                        (!embedUrl.includes('mediadelivery.net') && !embedUrl.includes('youtube'));
+                        (!embedUrl.includes('mediadelivery.net') && 
+                         !embedUrl.includes('youtube') &&
+                         !embedUrl.includes('b-cdn.net'));
 
   return (
-    <div className="min-h-screen bg-black font-khmer">
-      {/* Back Button */}
-      <div className="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-black/80 to-transparent pt-4 pb-12 px-4">
+    <div className="min-h-screen bg-black font-khmer relative">
+      {/* ===== BACK BUTTON ===== */}
+      <div className={`absolute top-0 left-0 right-0 z-30 bg-gradient-to-b from-black/80 to-transparent pt-4 pb-12 px-4 transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
         <Link to={`/movies/${id}`} className="text-white hover:text-gray-300 bg-black/50 w-10 h-10 rounded-full flex items-center justify-center">
           <i className="bi bi-arrow-left text-xl"></i>
         </Link>
       </div>
 
-      {/* Watermark */}
-      {user && (
-        <div className="absolute top-4 right-4 bg-black/50 text-white/20 text-xs px-2 py-1 rounded z-20">
-          {user.username || user.email}
-        </div>
-      )}
+      {/* ===== TOP RIGHT CONTROLS ===== */}
+      <div className={`absolute top-4 right-4 z-30 flex items-center gap-3 transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+        {/* User Watermark */}
+        {user && (
+          <div className="bg-black/50 text-white/60 text-xs px-3 py-1.5 rounded-full">
+            <i className="bi bi-person me-1"></i>
+            {user.username || user.email}
+          </div>
+        )}
+        
+        {/* Fullscreen Button */}
+        <button
+          onClick={toggleFullscreen}
+          className="text-white hover:text-gray-300 bg-black/50 w-10 h-10 rounded-full flex items-center justify-center transition-colors"
+          title={isFullscreen ? 'ចេញពី Fullscreen (F)' : 'Fullscreen (F)'}
+        >
+          <i className={`bi ${isFullscreen ? 'bi-fullscreen-exit' : 'bi-fullscreen'} text-xl`}></i>
+        </button>
+      </div>
 
-      {/* Movie Title */}
+      {/* ===== BOTTOM MOVIE TITLE ===== */}
       {movie?.title && (
-        <div className="absolute bottom-4 left-4 z-20">
-          <h1 className="text-white text-lg font-bold drop-shadow-lg">{movie.title}</h1>
+        <div className={`absolute bottom-4 left-4 z-30 transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+          <h1 className="text-white text-lg font-bold drop-shadow-lg flex items-center gap-2">
+            <i className="bi bi-film text-red-500"></i>
+            {movie.title}
+          </h1>
         </div>
       )}
 
-      {/* ✅ Video Player */}
+      {/* ===== BOTTOM RIGHT CONTROLS ===== */}
+      <div className={`absolute bottom-4 right-4 z-30 flex items-center gap-2 transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+        <span className="text-white/50 text-xs bg-black/50 px-2 py-1 rounded">
+          <i className="bi bi-keyboard me-1"></i>
+          F = Fullscreen
+        </span>
+      </div>
+
+      {/* ===== CLICK TO TOGGLE CONTROLS ===== */}
+      <div 
+        className="absolute inset-0 z-20 cursor-pointer"
+        onClick={() => setShowControls(!showControls)}
+      />
+
+      {/* ===== VIDEO PLAYER ===== */}
       {isDirectVideo ? (
         // Direct video file - use HTML5 video player
         <video
@@ -130,6 +215,12 @@ export default function VideoPlayerPage() {
           autoPlay
           controlsList="nodownload"
           onContextMenu={(e) => e.preventDefault()}
+          disablePictureInPicture
+          playsInline
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowControls(!showControls);
+          }}
         >
           <p>កម្មវិធីរុករករបស់អ្នកមិនគាំទ្រការចាក់វីដេអូទេ។</p>
         </video>
@@ -141,7 +232,19 @@ export default function VideoPlayerPage() {
           allowFullScreen
           allow="autoplay; encrypted-media; picture-in-picture; fullscreen"
           title={movie?.title || 'GZ Movie Player'}
+          sandbox="allow-same-origin allow-scripts allow-forms allow-presentation"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowControls(!showControls);
+          }}
         />
+      )}
+
+      {/* ===== LOADING OVERLAY ===== */}
+      {!embedUrl && (
+        <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
+          <div className="animate-spin w-12 h-12 border-4 border-red-600 border-t-transparent rounded-full"></div>
+        </div>
       )}
     </div>
   );

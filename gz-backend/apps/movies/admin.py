@@ -73,7 +73,7 @@ class MovieAdmin(admin.ModelAdmin):
     list_display = ['title', 'access_type', 'is_active', 'bunny_video_id', 'created_at']
     list_filter = ['access_type', 'is_active', 'genres']
     search_fields = ['title', 'description']
-    prepopulated_fields = {'slug': ('title',)}
+    readonly_fields = ['slug']
     filter_horizontal = ['genres', 'categories', 'cast', 'crew']
     inlines = [EpisodeInline]
 

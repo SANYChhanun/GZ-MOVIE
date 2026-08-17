@@ -7,6 +7,8 @@
 # avoids a hard import dependency between the two apps.
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
+from django.utils.text import slugify
+import uuid
 
 
 # apps/movies/models.py
@@ -19,7 +21,7 @@ class Movie(models.Model):
     ]
 
     title = models.CharField(max_length=255)
-    slug = models.SlugField(max_length=300, unique=True)
+    slug = models.SlugField(max_length=300, unique=True, allow_unicode=True, blank=True)
     description = models.TextField()
     short_description = models.CharField(max_length=500, blank=True)
 
@@ -74,6 +76,19 @@ class Movie(models.Model):
 
     def __str__(self):
         return self.title
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base = slugify(self.title, allow_unicode=True)
+            if not base:
+                base = f"movie-{uuid.uuid4().hex[:8]}"
+            slug = base
+            n = 1
+            while Movie.objects.filter(slug=slug).exclude(pk=self.pk).exists():
+                n += 1
+                slug = f"{base}-{n}"
+            self.slug = slug
+        super().save(*args, **kwargs)
 
     @property
     def is_free(self):

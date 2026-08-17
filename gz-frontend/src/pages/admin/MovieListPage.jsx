@@ -1,4 +1,4 @@
-// src/pages/admin/MovieListPage.jsx — កែលម្អ
+// src/pages/admin/MovieListPage.jsx
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Search, Plus, Pencil, Trash2, Star, Film, Loader, RefreshCw, Calendar, Eye } from "lucide-react";
 import SectionHeader from "../../components/common/SectionHeader";
@@ -7,41 +7,90 @@ import IconBtn from "../../components/common/IconBtn";
 import Table from "../../components/common/Table";
 import adminApi from "../../api/adminApi";
 import AddMovieDrawer from "../../features/admin/AddMovieDrawer";
+import MovieDetailDrawer from "../../features/admin/MovieDetailDrawer";
 
 /* ============================================================
-   Shared helpers (កែលម្អ)
+   Shared helpers
    ============================================================ */
 
 const accessDisplay = (type) => {
-  const map = { 
-    free: "Free", 
-    member: "Membership", 
-    purchase: "Pay Per View" 
+  const map = {
+    free: "Free",
+    member: "Membership",
+    purchase: "Pay Per View",
   };
   return map[type] || type || "—";
-};
-
-const formatCategories = (categories) => {
-  if (!Array.isArray(categories) || categories.length === 0) return "—";
-  return categories
-    .map((c) => (c && typeof c === "object" ? c.name : c))
-    .filter(Boolean)
-    .join(", ");
 };
 
 const formatDate = (dateString) => {
   if (!dateString) return "—";
   const date = new Date(dateString);
   if (isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString('km-KH', { 
-    year: 'numeric', 
-    month: 'short', 
-    day: 'numeric' 
+  return date.toLocaleDateString('km-KH', {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric'
   });
 };
 
 const inputClass = "bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 transition-all";
 const PAGE_SIZE = 10;
+
+/* ============================================================
+   Category badge helpers (deterministic color per name)
+   ============================================================ */
+
+const CATEGORY_PALETTE = [
+  "bg-amber-500/15 text-amber-300 border-amber-500/30",
+  "bg-sky-500/15 text-sky-300 border-sky-500/30",
+  "bg-emerald-500/15 text-emerald-300 border-emerald-500/30",
+  "bg-violet-500/15 text-violet-300 border-violet-500/30",
+  "bg-rose-500/15 text-rose-300 border-rose-500/30",
+  "bg-cyan-500/15 text-cyan-300 border-cyan-500/30",
+  "bg-fuchsia-500/15 text-fuchsia-300 border-fuchsia-500/30",
+  "bg-lime-500/15 text-lime-300 border-lime-500/30",
+];
+
+const hashString = (str) => {
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+  }
+  return Math.abs(hash);
+};
+
+const paletteFor = (name) => CATEGORY_PALETTE[hashString(name) % CATEGORY_PALETTE.length];
+
+function CategoryBadges({ categories, max = 2 }) {
+  const names = Array.isArray(categories)
+    ? categories.map((c) => (c && typeof c === "object" ? c.name : c)).filter(Boolean)
+    : [];
+
+  if (names.length === 0) {
+    return <span className="text-slate-600 text-xs">—</span>;
+  }
+
+  const shown = names.slice(0, max);
+  const remaining = names.length - shown.length;
+
+  return (
+    <div className="flex flex-wrap gap-1">
+      {shown.map((name) => (
+        <span
+          key={name}
+          className={`text-[11px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${paletteFor(name)}`}
+        >
+          {name}
+        </span>
+      ))}
+      {remaining > 0 && (
+        <span className="text-[11px] px-2 py-0.5 rounded-full border border-slate-700 text-slate-400">
+          +{remaining}
+        </span>
+      )}
+    </div>
+  );
+}
 
 function MoviePosterThumb({ src, alt }) {
   const [failed, setFailed] = useState(false);
@@ -65,7 +114,7 @@ function MoviePosterThumb({ src, alt }) {
 }
 
 /* ============================================================
-   Movie List Page (កែលម្អ)
+   Movie List Page
    ============================================================ */
 
 export default function MovieListPage() {
@@ -80,9 +129,13 @@ export default function MovieListPage() {
   const [page, setPage] = useState(1);
   const [debouncedQuery, setDebouncedQuery] = useState("");
 
-  // Drawer state
+  // Edit/Add drawer state
   const [showForm, setShowForm] = useState(false);
   const [editingMovie, setEditingMovie] = useState(null);
+
+  // Detail (read-only) drawer state
+  const [showDetail, setShowDetail] = useState(false);
+  const [viewingMovie, setViewingMovie] = useState(null);
 
   // Debounce search
   useEffect(() => {
@@ -130,10 +183,9 @@ export default function MovieListPage() {
   }, [debouncedQuery, accessFilter]);
 
   const handleDelete = async (id) => {
-    if (!window.confirm("Delete this movie? This action cannot be undone.")) return;
+    if (!window.confirm("លុបភាពយន្តនេះ? សកម្មភាពនេះមិនអាចត្រឡប់វិញបានទេ។")) return;
     try {
       await adminApi.deleteMovie(id);
-      // បើទំព័រចុងក្រោយមានតែ 1 item ហើយលុបចោល ត្រូវត្រឡប់ទៅទំព័រមុន
       if (movies.length === 1 && page > 1) {
         setPage(page - 1);
       } else {
@@ -163,6 +215,30 @@ export default function MovieListPage() {
     setShowForm(false);
     setEditingMovie(null);
     fetchMovies();
+  };
+
+  // ---- Detail drawer handlers ----
+  const handleViewClick = (movie) => {
+    setViewingMovie(movie);
+    setShowDetail(true);
+  };
+
+  const handleDetailClose = () => {
+    setShowDetail(false);
+    setViewingMovie(null);
+  };
+
+  // Jump straight from Detail view into Edit mode
+  const handleDetailEdit = (movie) => {
+    setShowDetail(false);
+    setViewingMovie(null);
+    setEditingMovie(movie);
+    setShowForm(true);
+  };
+
+  const handleDetailDelete = (id) => {
+    handleDetailClose();
+    handleDelete(id);
   };
 
   const totalPages = useMemo(() => Math.ceil(totalCount / PAGE_SIZE), [totalCount]);
@@ -244,7 +320,7 @@ export default function MovieListPage() {
             <MoviePosterThumb src={m.poster} alt={m.title} />
             <span className="font-medium text-slate-100">{m.title}</span>
           </div>,
-          formatCategories(m.categories),
+          <CategoryBadges categories={m.categories} key={`cat-${m.id}`} />,
           <Badge tone={accessTone[m.access_type] || accessTone.free} key={`acc-${m.id}`}>
             {accessDisplay(m.access_type)}
           </Badge>,
@@ -268,13 +344,20 @@ export default function MovieListPage() {
             )}
           </span>,
           <div className="flex items-center gap-1.5" key={`act-${m.id}`}>
+            <button
+              onClick={() => handleViewClick(m)}
+              title="មើលលម្អិត"
+              className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
+            >
+              <i className="bi bi-eye-fill" style={{ fontSize: 14 }} />
+            </button>
             <IconBtn icon={Pencil} title="Edit" onClick={() => handleEditClick(m)} />
             <IconBtn icon={Trash2} tone="crimson" title="Delete" onClick={() => handleDelete(m.id)} />
           </div>,
         ])}
       />
 
-      {/* Pagination - កែលម្អឱ្យស្អាតជាងមុន */}
+      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex justify-center mt-4 gap-2 items-center">
           <button
@@ -305,6 +388,16 @@ export default function MovieListPage() {
           movie={editingMovie}
           onClose={handleFormCancel}
           onSave={handleFormSave}
+        />
+      )}
+
+      {/* Detail (read-only) Drawer */}
+      {showDetail && viewingMovie && (
+        <MovieDetailDrawer
+          movie={viewingMovie}
+          onClose={handleDetailClose}
+          onEdit={handleDetailEdit}
+          onDelete={handleDetailDelete}
         />
       )}
     </>

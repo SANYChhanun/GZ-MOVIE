@@ -1,4 +1,4 @@
-// src/pages/movies/MovieLibraryPage.jsx — Real API Data Version
+// src/pages/movies/MovieLibraryPage.jsx — Fixed Version
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import moviesApi from '../../api/moviesApi';
@@ -101,8 +101,8 @@ export default function MovieLibraryPage() {
     fetchMovies();
   };
 
-  const handleGenreChange = (genre) => {
-    setSelectedGenre(genre === selectedGenre ? '' : genre);
+  const handleGenreChange = (genreSlug) => {
+    setSelectedGenre(genreSlug === selectedGenre ? '' : genreSlug);
     setPage(1);
   };
 
@@ -221,15 +221,15 @@ export default function MovieLibraryPage() {
               </button>
               {genres.map((genre) => (
                 <button
-                  key={genre.id || genre.name}
-                  onClick={() => handleGenreChange(genre.id || genre.name)}
+                  key={genre.id}
+                  onClick={() => handleGenreChange(genre.slug)}
                   className={`px-4 py-1.5 rounded-full text-sm font-medium whitespace-nowrap transition ${
-                    selectedGenre === (genre.id || genre.name)
+                    selectedGenre === genre.slug
                       ? 'bg-red-600 text-white shadow-lg'
                       : 'bg-gray-800 text-gray-300 hover:bg-gray-700'
                   }`}
                 >
-                  {typeof genre === 'string' ? genre : genre.name}
+                  {genre.name}
                 </button>
               ))}
             </div>

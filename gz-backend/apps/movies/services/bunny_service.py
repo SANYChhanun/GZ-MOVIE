@@ -1,3 +1,4 @@
+# apps/movies/services/bunny_service.py
 import hashlib
 import time
 
@@ -66,7 +67,6 @@ class BunnyStreamService:
     @classmethod
     def _library_id(cls):
         library_id = settings.BUNNY_STREAM_LIBRARY_ID
-        # ត្រូវប្រាកដថាមិនមានចន្លោះ ឬតួអក្សរពិសេស
         return str(library_id).strip()
 
     @classmethod
@@ -124,10 +124,6 @@ class BunnyStreamService:
                     f"{cls.BASE_URL}/{library_id}/videos/{video_id}",
                     headers=cls._headers(content_type="application/octet-stream"),
                     data=f,
-                    # (connect_timeout, read_timeout) instead of no timeout at
-                    # all — timeout=None means a stalled connection (not a
-                    # clean error, just silence) would hang this call forever
-                    # with no way out.
                     timeout=(30, 7200),
                 )
             response.raise_for_status()
@@ -165,23 +161,6 @@ class BunnyStreamService:
         signature_string = f"{library_id}{api_key}{expiration_time}{video_id}"
         signature = hashlib.sha256(signature_string.encode()).hexdigest()
 
-        # ★ FIX: the endpoint must be the plain TUS creation URL --
-        # https://video.bunnycdn.com/tusupload -- with NO library_id or
-        # video_id appended to the path. Those go in the LibraryId /
-        # VideoId headers instead (see tus-js-client config on the
-        # frontend). This matches Bunny's official TUS docs exactly:
-        # https://docs.bunny.net/stream/tus-resumable-uploads
-        #
-        # A previous version of this method appended
-        # f"{TUS_ENDPOINT}/{library_id}/{video_id}", which made
-        # tus-js-client's upload-creation POST hit a URL Bunny doesn't
-        # recognize (404). A separate hand-rolled single-PATCH
-        # implementation on the frontend, sent straight to that same
-        # malformed URL, skipped the required TUS "create the upload
-        # resource" POST step entirely -- which is why Bunny then
-        # rejected it with "400 Invalid file id": from Bunny's point of
-        # view, no upload resource with that id was ever created via the
-        # correct two-step protocol.
         endpoint = cls.TUS_ENDPOINT
 
         return {
@@ -235,3 +214,94 @@ class BunnyStreamService:
                 f"(status {response.status_code}): {response.text}"
             )
         return guid
+
+    # ================================================================
+    # NEW: Helper methods for checking videos in Bunny
+    # ================================================================
+
+    @classmethod
+    def get_all_videos(cls, page: int = 1, per_page: int = 100) -> dict:
+        """
+        Get all videos from Bunny Stream library.
+        Returns dict with 'items' list and 'totalItems' count.
+        """
+        library_id = cls._library_id()
+        api_key = cls._api_key()
+        
+        if not library_id or not api_key:
+            print("BunnyStreamService: BUNNY_STREAM_LIBRARY_ID/BUNNY_STREAM_API_KEY not configured.")
+            return {"items": [], "totalItems": 0}
+
+        try:
+            response = requests.get(
+                f"{cls.BASE_URL}/{library_id}/videos",
+                headers=cls._headers(),
+                params={"page": page, "perPage": per_page},
+                timeout=30,
+            )
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as exc:
+            print(f"BunnyStreamService.get_all_videos failed: {exc}")
+            return {"items": [], "totalItems": 0}
+
+    @classmethod
+    def get_video(cls, video_id: str) -> dict:
+        """
+        Get a specific video from Bunny Stream by its GUID.
+        Returns video data dict or None if not found.
+        """
+        library_id = cls._library_id()
+        api_key = cls._api_key()
+        
+        if not library_id or not api_key:
+            print("BunnyStreamService: BUNNY_STREAM_LIBRARY_ID/BUNNY_STREAM_API_KEY not configured.")
+            return None
+
+        try:
+            response = requests.get(
+                f"{cls.BASE_URL}/{library_id}/videos/{video_id}",
+                headers=cls._headers(),
+                timeout=30,
+            )
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except requests.RequestException as exc:
+            print(f"BunnyStreamService.get_video failed: {exc}")
+            return None
+
+    @classmethod
+    def delete_video(cls, video_id: str) -> bool:
+        """
+        Delete a video from Bunny Stream by its GUID.
+        Returns True on success, False on failure.
+        """
+        library_id = cls._library_id()
+        api_key = cls._api_key()
+        
+        if not library_id or not api_key:
+            print("BunnyStreamService: BUNNY_STREAM_LIBRARY_ID/BUNNY_STREAM_API_KEY not configured.")
+            return False
+
+        try:
+            response = requests.delete(
+                f"{cls.BASE_URL}/{library_id}/videos/{video_id}",
+                headers=cls._headers(),
+                timeout=30,
+            )
+            response.raise_for_status()
+            return True
+        except requests.RequestException as exc:
+            print(f"BunnyStreamService.delete_video failed: {exc}")
+            return False
+
+    @classmethod
+    def get_video_embed_html(cls, video_id: str, autoplay: bool = True) -> str:
+        """
+        Get HTML embed code for a video from Bunny Stream.
+        """
+        embed_url = cls.get_embed_url(video_id)
+        if autoplay:
+            embed_url += "?autoplay=1"
+        return f'<iframe src="{embed_url}" width="100%" height="100%" allowfullscreen allow="autoplay; encrypted-media; picture-in-picture; fullscreen"></iframe>'

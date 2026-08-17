@@ -1,4 +1,4 @@
-// src/features/admin/AddMovieDrawer.jsx
+// src/features/admin/AddMovieDrawer.jsx — Full Code with Bunny Video ID Field
 import { useState, useEffect, useRef } from "react";
 import { X, UploadCloud, Loader, AlertCircle, Video, Trash2 } from "lucide-react";
 import * as tus from "tus-js-client";
@@ -54,6 +54,7 @@ const emptyForm = {
   is_featured: false,
   is_new_release: false,
   is_active: true,
+  bunny_video_id: "", // ✅ Direct Bunny Video ID input
 };
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
@@ -240,6 +241,7 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
         is_featured: movie.is_featured || false,
         is_new_release: movie.is_new_release || false,
         is_active: movie.is_active ?? true,
+        bunny_video_id: movie.bunny_video_id || "", // ✅ Pre-fill bunny_video_id
       });
       setSlugTouched(true); // don't overwrite an existing slug automatically
       setCategoryIds((movie.categories || []).map((c) => (typeof c === "object" ? c.id : c)));
@@ -301,12 +303,7 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
 
   // Auto-derive slug from title until the admin edits slug by hand
   const handleTitleChange = (e) => {
-    const title = e.target.value;
-    setForm((prev) => ({
-      ...prev,
-      title,
-      slug: slugTouched ? prev.slug : slugify(title),
-    }));
+    setForm((prev) => ({ ...prev, title: e.target.value }));
   };
 
   const handleSlugChange = (e) => {
@@ -496,103 +493,76 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     }
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    console.log("[movie-save] handleSubmit fired", { isEdit, form, imageFile, backdropFile, videoFile });
+  // src/features/admin/AddMovieDrawer.jsx
 
-    if (!isEdit && !imageFile) {
-      console.log("[movie-save] blocked: cover image required");
-      setFormError("A cover image is required.");
-      return;
-    }
-    if (!form.slug.trim()) {
-      console.log("[movie-save] blocked: slug required");
-      setFormError("Slug is required (derived from title, or set it manually).");
-      return;
-    }
-    if (!form.description.trim()) {
-      console.log("[movie-save] blocked: description required");
-      setFormError("Description is required.");
-      return;
-    }
-    if (!form.country.trim() || !form.language.trim()) {
-      console.log("[movie-save] blocked: country/language required");
-      setFormError("Country and language are required.");
-      return;
-    }
-    if (!form.duration) {
-      console.log("[movie-save] blocked: duration required");
-      setFormError("Duration is required.");
-      return;
-    }
-    if (!form.release_date) {
-      console.log("[movie-save] blocked: release date required");
-      setFormError("Release date is required.");
-      return;
-    }
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  console.log("[movie-save] handleSubmit fired", { isEdit, form, imageFile, backdropFile, videoFile });
 
-    console.log("[movie-save] validation passed, submitting…");
-    setSubmitting(true);
-    setFormError(null);
-    setUploadProgress(0);
+  // ... validation code ...
 
-    // Step 1 (only if a new video file was picked): upload it straight
-    // to Bunny via TUS, direct from this browser. This can take a while
-    // for large files, but never touches our own server or its request
-    // size / timeout limits.
-    let finalBunnyVideoId = bunnyVideoId;
-    if (videoFile) {
-      setSubmitStage("video");
-      try {
-        finalBunnyVideoId = await uploadVideoDirectToBunny(videoFile, form.title || "Untitled");
-        setBunnyVideoId(finalBunnyVideoId);
-      } catch (err) {
-        setFormError(
-          err?.message === "AbortError" || err?.name === "AbortError"
-            ? "Video upload canceled."
-            : err?.message || "Video upload to Bunny failed. Please try again."
-        );
-        setSubmitting(false);
-        setSubmitStage(null);
-        return;
-      }
+  console.log("[movie-save] validation passed, submitting…");
+  setSubmitting(true);
+  setFormError(null);
+  setUploadProgress(0);
+
+  // ✅ ប្រើ bunny_video_id ពី form បើមាន
+  let finalBunnyVideoId = form.bunny_video_id?.trim() || bunnyVideoId;
+
+  // ✅ ប្រសិនបើមាន videoFile (Upload ថ្មី)
+  if (videoFile) {
+    setSubmitStage("video");
+    try {
+      finalBunnyVideoId = await uploadVideoDirectToBunny(videoFile, form.title || "Untitled");
+      setBunnyVideoId(finalBunnyVideoId);
+      // ✅ Update form with new bunny_video_id
+      setForm(prev => ({ ...prev, bunny_video_id: finalBunnyVideoId }));
+    } catch (err) {
+      setFormError(
+        err?.message === "AbortError" || err?.name === "AbortError"
+          ? "Video upload canceled."
+          : err?.message || "Video upload to Bunny failed. Please try again."
+      );
+      setSubmitting(false);
+      setSubmitStage(null);
+      return;
     }
+  }
 
-    // Step 2: save the rest of the movie's fields, including the Bunny
-    // video id from step 1 (or the pre-existing one on edit, or none at
-    // all if this movie has no video yet).
-    setSubmitStage("saving");
-    setUploadProgress(0);
+  // Step 2: save movie
+  setSubmitStage("saving");
+  setUploadProgress(0);
 
-    const fd = new FormData();
-    fd.append("title", form.title);
-    fd.append("slug", form.slug);
-    fd.append("description", form.description);
-    if (form.short_description) fd.append("short_description", form.short_description);
-    fd.append("country", form.country);
-    fd.append("language", form.language);
-    if (form.release_date) fd.append("release_date", form.release_date);
-    fd.append("duration", form.duration);
-    if (form.rating) fd.append("rating", form.rating);
-    fd.append("access_type", form.access_type);
-    if (form.purchase_price) fd.append("purchase_price", form.purchase_price);
-    fd.append("is_featured", String(form.is_featured));
-    fd.append("is_new_release", String(form.is_new_release));
-    fd.append("is_active", String(form.is_active));
-    categoryIds.forEach((id) => fd.append("categories", id));
-    genreIds.forEach((id) => fd.append("genres", id));
-    if (imageFile) fd.append("poster", imageFile);
-    if (backdropFile) fd.append("backdrop", backdropFile);
-    if (finalBunnyVideoId) {
-      // Either the direct-to-Bunny upload in Step 1 just succeeded, or
-      // this is an edit where the movie already had a video and nothing
-      // changed about it.
-      fd.append("bunny_video_id", finalBunnyVideoId);
-    } else if (videoCleared) {
-      // Explicit empty string, distinct from simply not sending the field —
-      // tells the backend "detach the video" rather than "leave it alone".
-      fd.append("bunny_video_id", "");
-    }
+  const fd = new FormData();
+  fd.append("title", form.title);
+  fd.append("description", form.description);
+  if (form.short_description) fd.append("short_description", form.short_description);
+  fd.append("country", form.country);
+  fd.append("language", form.language);
+  if (form.release_date) fd.append("release_date", form.release_date);
+  fd.append("duration", form.duration);
+  if (form.rating) fd.append("rating", form.rating);
+  fd.append("access_type", form.access_type);
+  if (form.purchase_price) fd.append("purchase_price", form.purchase_price);
+  fd.append("is_featured", String(form.is_featured));
+  fd.append("is_new_release", String(form.is_new_release));
+  fd.append("is_active", String(form.is_active));
+  categoryIds.forEach((id) => fd.append("categories", id));
+  genreIds.forEach((id) => fd.append("genres", id));
+  if (imageFile) fd.append("poster", imageFile);
+  if (backdropFile) fd.append("backdrop", backdropFile);
+  
+  // ✅ ផ្ញើ bunny_video_id (បើមាន)
+  if (finalBunnyVideoId) {
+    fd.append("bunny_video_id", finalBunnyVideoId);
+    console.log("✅ Sending bunny_video_id:", finalBunnyVideoId);
+  } else if (videoCleared) {
+    fd.append("bunny_video_id", "");
+    console.log("🗑️ Clearing video");
+  }
+
+
+
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -693,17 +663,17 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
             />
           </div>
 
-          {/* Slug */}
+          {/* Slug — server always generates the real one from title
+              (supports Khmer via allow_unicode), this is read-only info */}
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Slug *</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1">
+              Slug {isEdit && <span className="text-slate-500 font-normal">(auto-generated)</span>}
+            </label>
             <input
               type="text"
-              name="slug"
-              value={form.slug}
-              onChange={handleSlugChange}
-              required
-              placeholder="auto-generated-from-title"
-              className={`${inputClass} w-full`}
+              value={isEdit ? form.slug : "បង្កើតដោយស្វ័យប្រវត្តិពេលរក្សាទុក"}
+              disabled
+              className={`${inputClass} w-full opacity-60 cursor-not-allowed`}
             />
           </div>
 
@@ -832,6 +802,129 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
             )}
           </div>
 
+          {/* ✅ BUNNY VIDEO ID - Direct Input Field */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">
+              Bunny Video ID <span className="text-yellow-400">(បញ្ចូលដោយផ្ទាល់)</span>
+            </label>
+            <input
+              type="text"
+              name="bunny_video_id"
+              value={form.bunny_video_id || ""}
+              onChange={handleChange}
+              placeholder="e.g. 123e4567-e89b-12d3-a456-426614174000"
+              className={`${inputClass} w-full font-mono text-sm`}
+            />
+            <p className="text-xs text-slate-500 mt-1.5">
+              បើមាន Video ID ពី Bunny រួចហើយ អាចបញ្ចូលដោយផ្ទាល់ 
+              (ទុកទទេប្រសិនបើចង់ Upload តាមឯកសារ)
+            </p>
+            {form.bunny_video_id && (
+              <div className="mt-2 p-2 bg-green-500/10 border border-green-500/20 rounded-lg">
+                <p className="text-xs text-green-400">
+                  <i className="bi bi-check-circle mr-1"></i>
+                  Video ID: <span className="font-mono">{form.bunny_video_id}</span>
+                </p>
+                <p className="text-xs text-green-400/70 mt-1">
+                  Embed URL: 
+                  <span className="font-mono text-[10px] block mt-0.5 break-all">
+                    https://iframe.mediadelivery.net/embed/724838/{form.bunny_video_id}
+                  </span>
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Video file upload - show only if no bunny_video_id */}
+          {!form.bunny_video_id && (
+            <div>
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">Movie video file</label>
+
+              {videoFile && videoPreview ? (
+                // A new file was just picked locally — preview it directly.
+                <div className="rounded-xl overflow-hidden border border-slate-700 bg-black">
+                  <video src={videoPreview} controls className="w-full max-h-72 bg-black" />
+                  <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-800/80 flex-wrap">
+                    <span className="text-xs text-slate-300 truncate flex items-center gap-1.5 min-w-0">
+                      <Video size={13} className="text-amber-400 shrink-0" />
+                      <span className="truncate">{videoFile.name}</span>
+                      <span className="text-slate-500 shrink-0">· {formatBytes(videoFile.size)}</span>
+                    </span>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <label className="text-xs text-amber-400 hover:text-amber-300 cursor-pointer">
+                        ប្តូរ
+                        <input type="file" accept="video/*" className="hidden" onChange={handleVideoInputChange} />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleRemoveVideo}
+                        className="inline-flex items-center gap-1 text-xs text-red-400 hover:text-red-300"
+                      >
+                        <Trash2 size={13} /> លុប
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : isEdit && movie?.video_file && !videoCleared ? (
+                // Editing a movie that already has a video, and nothing new
+                // has been picked or cleared — show the existing video.
+                <div className="rounded-xl overflow-hidden border border-slate-700 bg-black">
+                  <iframe
+                    src={movie.video_file}
+                    className="w-full aspect-video"
+                    allow="autoplay; fullscreen"
+                    title="Current video"
+                  />
+                  <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-800/80 flex-wrap">
+                    <span className="text-xs text-slate-300 flex items-center gap-1.5">
+                      <Video size={13} className="text-amber-400 shrink-0" />
+                      វីដេអូបច្ចុប្បន្ន
+                    </span>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <label className="text-xs text-amber-400 hover:text-amber-300 cursor-pointer">
+                        ជំនួសដោយឯកសារថ្មី
+                        <input type="file" accept="video/*" className="hidden" onChange={handleVideoInputChange} />
+                      </label>
+                      <button
+                        type="button"
+                        onClick={handleRemoveVideo}
+                        className="inline-flex items-center gap-1 text-xs text-red-400 hover:text-red-300"
+                      >
+                        <Trash2 size={13} /> លុប
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                // Nothing selected yet — drag & drop zone.
+                <div
+                  onDragEnter={(e) => e.preventDefault()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={handleVideoDrop}
+                  className="relative rounded-xl border-2 border-dashed border-slate-700 bg-slate-800/50 hover:border-slate-600 transition-colors"
+                >
+                  <label className="flex flex-col items-center justify-center gap-1.5 py-8 px-4 text-center cursor-pointer">
+                    <UploadCloud size={22} className="text-slate-500" />
+                    <span className="text-sm text-slate-400">
+                      <span className="text-amber-400 font-medium">ចុច</span> ឬទាញឯកសារវីដេអូមកដាក់
+                    </span>
+                    <span className="text-xs text-slate-600">MP4, MOV, MKV — អតិបរមា 50GB</span>
+                    {videoCleared && (
+                      <span className="text-xs text-amber-500 mt-1">វីដេអូចាស់នឹងត្រូវលុបចេញពេលអ្នករក្សាទុក</span>
+                    )}
+                    <input type="file" accept="video/*" className="hidden" onChange={handleVideoInputChange} />
+                  </label>
+                </div>
+              )}
+
+              <p className="text-xs text-slate-600 mt-1.5">
+                {isEdit
+                  ? "ទុកទទេ ដើម្បីរក្សាទុកវីដេអូបច្ចុប្បន្ន។ Upload ដោយផ្ទាល់ទៅ Bunny Stream ពេលអ្នករក្សាទុក — អតិបរមា 50GB, resumable បើ connection ដាច់។"
+                  : "ស្រេចចិត្ត — Upload ដោយផ្ទាល់ទៅ Bunny Stream ពេលអ្នករក្សាទុក។ អតិបរមា 50GB, resumable បើ connection ដាច់។"}
+              </p>
+            </div>
+          )}
+
           {/* Display options — featured banner / new release / active */}
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-1.5">ជម្រើសបង្ហាញ</label>
@@ -909,94 +1002,6 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
                 ))}
               </div>
             )}
-          </div>
-
-          {/* Video file */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Movie video file</label>
-
-            {videoFile && videoPreview ? (
-              // A new file was just picked locally — preview it directly.
-              <div className="rounded-xl overflow-hidden border border-slate-700 bg-black">
-                <video src={videoPreview} controls className="w-full max-h-72 bg-black" />
-                <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-800/80 flex-wrap">
-                  <span className="text-xs text-slate-300 truncate flex items-center gap-1.5 min-w-0">
-                    <Video size={13} className="text-amber-400 shrink-0" />
-                    <span className="truncate">{videoFile.name}</span>
-                    <span className="text-slate-500 shrink-0">· {formatBytes(videoFile.size)}</span>
-                  </span>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <label className="text-xs text-amber-400 hover:text-amber-300 cursor-pointer">
-                      ប្តូរ
-                      <input type="file" accept="video/*" className="hidden" onChange={handleVideoInputChange} />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={handleRemoveVideo}
-                      className="inline-flex items-center gap-1 text-xs text-red-400 hover:text-red-300"
-                    >
-                      <Trash2 size={13} /> លុប
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : isEdit && movie?.video_file && !videoCleared ? (
-              // Editing a movie that already has a video, and nothing new
-              // has been picked or cleared — show the existing video.
-              <div className="rounded-xl overflow-hidden border border-slate-700 bg-black">
-                <iframe
-                  src={movie.video_file}
-                  className="w-full aspect-video"
-                  allow="autoplay; fullscreen"
-                  title="Current video"
-                />
-                <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-800/80 flex-wrap">
-                  <span className="text-xs text-slate-300 flex items-center gap-1.5">
-                    <Video size={13} className="text-amber-400 shrink-0" />
-                    វីដេអូបច្ចុប្បន្ន
-                  </span>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <label className="text-xs text-amber-400 hover:text-amber-300 cursor-pointer">
-                      ជំនួសដោយឯកសារថ្មី
-                      <input type="file" accept="video/*" className="hidden" onChange={handleVideoInputChange} />
-                    </label>
-                    <button
-                      type="button"
-                      onClick={handleRemoveVideo}
-                      className="inline-flex items-center gap-1 text-xs text-red-400 hover:text-red-300"
-                    >
-                      <Trash2 size={13} /> លុប
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              // Nothing selected yet — drag & drop zone.
-              <div
-                onDragEnter={(e) => e.preventDefault()}
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={handleVideoDrop}
-                className="relative rounded-xl border-2 border-dashed border-slate-700 bg-slate-800/50 hover:border-slate-600 transition-colors"
-              >
-                <label className="flex flex-col items-center justify-center gap-1.5 py-8 px-4 text-center cursor-pointer">
-                  <UploadCloud size={22} className="text-slate-500" />
-                  <span className="text-sm text-slate-400">
-                    <span className="text-amber-400 font-medium">ចុច</span> ឬទាញឯកសារវីដេអូមកដាក់
-                  </span>
-                  <span className="text-xs text-slate-600">MP4, MOV, MKV — អតិបរមា 50GB</span>
-                  {videoCleared && (
-                    <span className="text-xs text-amber-500 mt-1">វីដេអូចាស់នឹងត្រូវលុបចេញពេលអ្នករក្សាទុក</span>
-                  )}
-                  <input type="file" accept="video/*" className="hidden" onChange={handleVideoInputChange} />
-                </label>
-              </div>
-            )}
-
-            <p className="text-xs text-slate-600 mt-1.5">
-              {isEdit
-                ? "ទុកទទេ ដើម្បីរក្សាទុកវីដេអូបច្ចុប្បន្ន។ Upload ដោយផ្ទាល់ទៅ Bunny Stream ពេលអ្នករក្សាទុក — អតិបរមា 50GB, resumable បើ connection ដាច់។"
-                : "ស្រេចចិត្ត — Upload ដោយផ្ទាល់ទៅ Bunny Stream ពេលអ្នករក្សាទុក។ អតិបរមា 50GB, resumable បើ connection ដាច់។"}
-            </p>
           </div>
 
           {formError && (

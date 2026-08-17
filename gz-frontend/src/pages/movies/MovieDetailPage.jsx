@@ -1,4 +1,4 @@
-// src/pages/movies/MovieDetailPage.jsx — Real API Data Version
+// src/pages/movies/MovieDetailPage.jsx — Fixed Video Player
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
@@ -17,6 +17,7 @@ export default function MovieDetailPage() {
   const [relatedMovies, setRelatedMovies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [showVideo, setShowVideo] = useState(false);
 
   // ============ FETCH MOVIE DATA ============
   useEffect(() => {
@@ -25,12 +26,11 @@ export default function MovieDetailPage() {
       setError(null);
       
       try {
-        // ទាញយកទិន្នន័យរឿងតាម ID
         const movieRes = await moviesApi.getMovie(id);
         const movieData = movieRes.data;
         setMovie(movieData);
 
-        // ទាញយក Episodes (បើមាន)
+        // Fetch episodes
         try {
           const episodesRes = await moviesApi.getEpisodes(id);
           const eps = episodesRes.data?.results || episodesRes.data || [];
@@ -39,7 +39,7 @@ export default function MovieDetailPage() {
           setEpisodes([]);
         }
 
-        // ទាញយករឿងពាក់ព័ន្ធ (ដោយ genre ដូចគ្នា)
+        // Fetch related movies
         if (movieData.genres?.length > 0) {
           try {
             const genreIds = movieData.genres.map(g => typeof g === 'object' ? g.id : g).join(',');
@@ -80,13 +80,12 @@ export default function MovieDetailPage() {
       return;
     }
     
-    // ពិនិត្យការចូលមើល
     if (movie.access_type === 'member' && !isVIP) {
       navigate('/pricing');
       return;
     }
     
-    navigate(`/watch/${id}`);
+    setShowVideo(true);
   };
 
   const handleEpisodeClick = (episodeId) => {
@@ -96,6 +95,61 @@ export default function MovieDetailPage() {
     }
     navigate(`/watch/${id}?episode=${episodeId}`);
   };
+
+  // ============ RENDER VIDEO PLAYER ============
+// src/pages/movies/MovieDetailPage.jsx
+
+const renderVideoPlayer = () => {
+  if (!showVideo) return null;
+  
+  // ✅ ប្រើ video_embed_url ជាអាទិភាព
+  const videoUrl = movie?.video_embed_url || 
+                   movie?.video_file || 
+                   movie?.bunny_video_id;
+  
+  console.log('🎬 Video URL:', videoUrl);
+  
+  if (!videoUrl) {
+    return (
+      <div className="bg-card rounded-xl p-8 text-center border border-white/5">
+        <i className="bi bi-exclamation-triangle text-4xl text-yellow-500 mb-3 block"></i>
+        <p className="text-gray-400">មិនមានវីដេអូសម្រាប់ភាពយន្តនេះទេ។</p>
+        <p className="text-gray-500 text-sm mt-2">
+          Access Type: {movie?.access_type}
+        </p>
+      </div>
+    );
+  }
+
+  const isBunnyUrl = videoUrl.includes('mediadelivery.net') || 
+                     videoUrl.includes('b-cdn.net') ||
+                     videoUrl.includes('bunnycdn');
+
+  return (
+    <div className="bg-black rounded-xl overflow-hidden border border-white/10">
+      {isBunnyUrl ? (
+        <iframe
+          src={videoUrl}
+          className="w-full aspect-video"
+          allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+          allowFullScreen
+          title={movie.title}
+          frameBorder="0"
+        />
+      ) : (
+        <video
+          controls
+          autoPlay
+          className="w-full aspect-video"
+          poster={movie.poster_url || movie.poster}
+        >
+          <source src={videoUrl} type="video/mp4" />
+          Your browser does not support the video tag.
+        </video>
+      )}
+    </div>
+  );
+};
 
   // ============ LOADING STATE ============
   if (loading) {
@@ -130,43 +184,39 @@ export default function MovieDetailPage() {
     );
   }
 
-  // ============ HELPER FUNCTIONS ============
-  const posterUrl = movie.poster || movie.poster_url || null;
-  const backdropUrl = movie.backdrop || movie.backdrop_url || posterUrl;
-  const title = movie.title || movie.name || 'Untitled';
+  // ============ MAIN RENDER ============
+  const posterUrl = movie.poster || null;
+  const title = movie.title || 'Untitled';
   const rating = movie.rating ? Number(movie.rating).toFixed(1) : null;
   const year = movie.release_date ? movie.release_date.split('-')[0] : movie.year || '';
   const genres = movie.genres || [];
-  const cast = movie.cast || [];
-  const crew = movie.crew || [];
   const isFree = movie.access_type === 'free';
   const isMember = movie.access_type === 'member';
-  const isPurchase = movie.access_type === 'purchase';
-
-  const accessLabel = isFree ? 'ឥតគិតថ្លៃ' : isMember ? 'VIP' : 'ទិញ';
-  const accessColor = isFree ? 'bg-green-500' : isMember ? 'bg-yellow-500 text-black' : 'bg-orange-500';
-
-  // Get director from crew
-  const director = crew.find(c => c.role === 'director' || c.role_display === 'Director');
 
   return (
     <div className="min-h-screen bg-darker font-khmer">
       <Header />
 
+      {/* ============ VIDEO PLAYER ============ */}
+      {showVideo && (
+        <div className="container mx-auto px-4 pt-24 pb-6">
+          {renderVideoPlayer()}
+        </div>
+      )}
+
       {/* ============ HERO SECTION ============ */}
-      <div className="relative">
+      <div className="relative" style={{ marginTop: showVideo ? '0' : '0' }}>
         {/* Backdrop Image */}
         <div className="absolute inset-0 h-[70vh] overflow-hidden">
-          {backdropUrl ? (
+          {movie.backdrop ? (
             <img
-              src={backdropUrl}
+              src={movie.backdrop}
               alt={title}
               className="w-full h-full object-cover object-center"
             />
           ) : (
             <div className="w-full h-full bg-gradient-to-br from-gray-900 via-gray-800 to-darker" />
           )}
-          {/* Gradient Overlays */}
           <div className="absolute inset-0 bg-gradient-to-t from-darker via-darker/60 to-transparent" />
           <div className="absolute inset-0 bg-gradient-to-r from-darker/80 to-transparent" />
         </div>
@@ -194,7 +244,6 @@ export default function MovieDetailPage() {
 
               {/* Info */}
               <div className="flex-1 text-center md:text-left">
-                {/* Title */}
                 <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-white mb-2">
                   {title}
                 </h1>
@@ -218,26 +267,11 @@ export default function MovieDetailPage() {
                     </>
                   )}
                   <span className="text-gray-500">•</span>
-                  <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${accessColor}`}>
-                    {accessLabel}
+                  <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
+                    isFree ? 'bg-green-500' : 'bg-yellow-500 text-black'
+                  }`}>
+                    {isFree ? 'ឥតគិតថ្លៃ' : 'VIP'}
                   </span>
-                </div>
-
-                {/* Country & Language */}
-                <div className="flex items-center justify-center md:justify-start gap-2 mb-4 text-sm text-gray-400 flex-wrap">
-                  {movie.country && (
-                    <>
-                      <span><i className="bi bi-globe mr-1"></i>{movie.country}</span>
-                      <span>•</span>
-                    </>
-                  )}
-                  {movie.language && (
-                    <>
-                      <span><i className="bi bi-translate mr-1"></i>{movie.language}</span>
-                      <span>•</span>
-                    </>
-                  )}
-                  <span><i className="bi bi-eye mr-1"></i>{(movie.view_count || 0).toLocaleString()} មើល</span>
                 </div>
 
                 {/* Genres */}
@@ -255,23 +289,25 @@ export default function MovieDetailPage() {
                   </div>
                 )}
 
-                {/* Director */}
-                {director && (
-                  <p className="text-gray-400 text-sm mb-4">
-                    <span className="text-gray-500">ដឹកនាំដោយ៖</span>{' '}
-                    <span className="text-white">{director.name}</span>
-                  </p>
-                )}
-
                 {/* Action Buttons */}
-                <div className="flex gap-3 justify-center md:justify-start">
-                  <button
-                    onClick={handleWatch}
-                    className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-8 rounded-xl flex items-center gap-2 transition-all hover:scale-105 shadow-xl"
-                  >
-                    <i className="bi bi-play-fill text-xl"></i>
-                    {user ? 'មើលឥឡូវនេះ' : 'ចូលគណនីដើម្បីមើល'}
-                  </button>
+                <div className="flex gap-3 justify-center md:justify-start flex-wrap">
+                  {!showVideo ? (
+                    <button
+                      onClick={handleWatch}
+                      className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-8 rounded-xl flex items-center gap-2 transition-all hover:scale-105 shadow-xl"
+                    >
+                      <i className="bi bi-play-fill text-xl"></i>
+                      {user ? 'មើលឥឡូវនេះ' : 'ចូលគណនីដើម្បីមើល'}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowVideo(false)}
+                      className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-8 rounded-xl flex items-center gap-2 transition-all"
+                    >
+                      <i className="bi bi-x-lg"></i>
+                      បិទវីដេអូ
+                    </button>
+                  )}
                   
                   {movie.trailer_url && (
                     <a
@@ -285,6 +321,27 @@ export default function MovieDetailPage() {
                     </a>
                   )}
                 </div>
+
+                {/* Access Info */}
+                {!user && (
+                  <p className="text-gray-400 text-sm mt-4">
+                    <i className="bi bi-info-circle mr-1"></i>
+                    សូម{' '}
+                    <Link to="/login" className="text-red-400 hover:text-red-300">
+                      ចូលគណនី
+                    </Link>
+                    {' '}ដើម្បីមើលវីដេអូ
+                  </p>
+                )}
+                {user && !isFree && !isVIP && (
+                  <p className="text-yellow-400 text-sm mt-4">
+                    <i className="bi bi-star mr-1"></i>
+                    ភាពយន្តនេះត្រូវការ VIP ដើម្បីមើល។
+                    <Link to="/pricing" className="text-red-400 hover:text-red-300 ml-1">
+                      ចុះឈ្មោះ VIP
+                    </Link>
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -304,13 +361,10 @@ export default function MovieDetailPage() {
                   អំពីភាពយន្ត
                 </h2>
                 <p className="text-gray-300 leading-relaxed">{movie.description}</p>
-                {movie.short_description && (
-                  <p className="text-gray-400 text-sm mt-2">{movie.short_description}</p>
-                )}
               </section>
             )}
 
-            {/* Episodes (for Series) */}
+            {/* Episodes */}
             {episodes.length > 0 && (
               <section>
                 <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
@@ -333,53 +387,7 @@ export default function MovieDetailPage() {
                       )}
                       <p className="text-white font-bold text-sm">ភាគ {ep.episode_number}</p>
                       {ep.title && <p className="text-gray-400 text-xs mt-1 truncate">{ep.title}</p>}
-                      {ep.duration && <p className="text-gray-500 text-xs mt-1">{ep.duration} នាទី</p>}
                     </button>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* Cast */}
-            {cast.length > 0 && (
-              <section>
-                <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                  <i className="bi bi-people-fill text-red-500"></i>
-                  តារាសម្តែង
-                </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-4">
-                  {cast.map((actor, i) => (
-                    <div key={i} className="bg-card rounded-xl p-4 text-center hover:bg-gray-700 transition-all border border-white/5">
-                      {actor.photo ? (
-                        <img src={actor.photo} alt={actor.name} className="w-16 h-16 rounded-full mx-auto mb-3 object-cover" />
-                      ) : (
-                        <div className="w-16 h-16 bg-gray-600 rounded-full mx-auto mb-3 flex items-center justify-center">
-                          <i className="bi bi-person-fill text-2xl text-gray-400"></i>
-                        </div>
-                      )}
-                      <p className="text-white text-sm font-bold">{actor.name}</p>
-                      {actor.character_name && (
-                        <p className="text-gray-400 text-xs mt-1">{actor.character_name}</p>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
-
-            {/* Crew */}
-            {crew.length > 0 && (
-              <section>
-                <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                  <i className="bi bi-person-gear text-red-500"></i>
-                  ក្រុមការងារ
-                </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                  {crew.map((member, i) => (
-                    <div key={i} className="bg-card rounded-xl p-4 border border-white/5">
-                      <p className="text-white font-bold text-sm">{member.name}</p>
-                      <p className="text-gray-400 text-xs mt-1">{member.role_display || member.role}</p>
-                    </div>
                   ))}
                 </div>
               </section>
@@ -388,30 +396,11 @@ export default function MovieDetailPage() {
 
           {/* Right Column - Sidebar */}
           <div className="space-y-6">
-            {/* Trailer */}
-            {movie.trailer_url && (
-              <div className="bg-card rounded-xl overflow-hidden border border-white/5">
-                <h3 className="text-white font-bold p-4 pb-2 flex items-center gap-2">
-                  <i className="bi bi-play-btn text-red-500"></i>
-                  ឈុតខ្លីៗ
-                </h3>
-                <div className="aspect-video">
-                  <iframe 
-                    src={movie.trailer_url} 
-                    className="w-full h-full" 
-                    allowFullScreen 
-                    title="Trailer"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-                  />
-                </div>
-              </div>
-            )}
-
             {/* Movie Info Card */}
             <div className="bg-card rounded-xl p-5 border border-white/5">
               <h3 className="text-white font-bold mb-4">ព័ត៌មាន</h3>
               <div className="space-y-3 text-sm">
-                <InfoRow label="ប្រភេទ" value={accessLabel} />
+                <InfoRow label="ប្រភេទ" value={isFree ? 'ឥតគិតថ្លៃ' : 'VIP'} />
                 {year && <InfoRow label="ឆ្នាំចេញ" value={year} />}
                 {movie.duration && <InfoRow label="រយៈពេល" value={`${movie.duration} នាទី`} />}
                 {movie.country && <InfoRow label="ប្រទេស" value={movie.country} />}
@@ -478,7 +467,6 @@ export default function MovieDetailPage() {
 }
 
 // ============ HELPER COMPONENTS ============
-
 function InfoRow({ label, value }) {
   return (
     <div className="flex justify-between">
