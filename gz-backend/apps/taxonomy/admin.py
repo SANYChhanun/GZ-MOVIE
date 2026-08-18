@@ -1,6 +1,5 @@
-# apps/taxonomy/admin.py
 from django.contrib import admin
-from .models import Genre, Category, Cast, Crew
+from .models import Genre, Category, Cast, Crew, Country, SeriesType  # ← បន្ថែម Country, SeriesType
 
 
 @admin.register(Genre)
@@ -8,6 +7,26 @@ class GenreAdmin(admin.ModelAdmin):
     list_display = ['name', 'slug']
     prepopulated_fields = {'slug': ('name',)}
     search_fields = ['name']
+
+
+# ============ បន្ថែម Country Admin ============
+@admin.register(Country)
+class CountryAdmin(admin.ModelAdmin):
+    list_display = ['name', 'slug', 'flag']
+    prepopulated_fields = {'slug': ('name',)}
+    search_fields = ['name']
+    list_editable = ['flag']  # អាចកែ flag ដោយផ្ទាល់ពី list view
+# ============ បញ្ចប់ការបន្ថែម ============
+
+
+# ============ បន្ថែម SeriesType Admin ============
+@admin.register(SeriesType)
+class SeriesTypeAdmin(admin.ModelAdmin):
+    list_display = ['name', 'slug', 'flag']
+    prepopulated_fields = {'slug': ('name',)}
+    search_fields = ['name']
+    list_editable = ['flag']  # អាចកែ flag ដោយផ្ទាល់ពី list view
+# ============ បញ្ចប់ការបន្ថែម ============
 
 
 @admin.register(Category)

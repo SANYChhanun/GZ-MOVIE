@@ -3,7 +3,7 @@ from django.utils.text import slugify
 from rest_framework import serializers
 from .models import Movie, Episode, HeroBanner
 from .services.bunny_service import BunnyStreamService
-from apps.taxonomy.serializers import GenreSerializer, CategorySerializer
+
 # Genre/Category/Cast/Crew moved to apps.taxonomy -- import their
 # serializers from there instead of defining local duplicates.
 from apps.taxonomy.serializers import (
@@ -11,8 +11,10 @@ from apps.taxonomy.serializers import (
     CategorySerializer,
     CastSerializer,
     CrewSerializer,
+    CountrySerializer,  # ← បន្ថែម
+    SeriesTypeSerializer,  # ← បន្ថែម
 )
-from apps.taxonomy.models import Genre, Category
+from apps.taxonomy.models import Genre, Category, Country, SeriesType  # ← បន្ថែម Country, SeriesType
 
 
 # ============================================================
@@ -23,6 +25,8 @@ class MovieListSerializer(serializers.ModelSerializer):
     """Lightweight serializer for movie list view"""
     genres = GenreSerializer(many=True, read_only=True)
     categories = CategorySerializer(many=True, read_only=True)
+    countries = CountrySerializer(many=True, read_only=True)  # ← បន្ថែម
+    series_types = SeriesTypeSerializer(many=True, read_only=True)  # ← បន្ថែម
     poster_url = serializers.SerializerMethodField()
     backdrop_url = serializers.SerializerMethodField()
     poster = serializers.SerializerMethodField()  # ← បន្ថែម (alias សម្រាប់ compatibility)
@@ -37,6 +41,10 @@ class MovieListSerializer(serializers.ModelSerializer):
             'rating', 'view_count', 'access_type',
             'genres', 'categories', 'is_featured', 'is_new_release',
             'country', 'language',
+            # ============ បន្ថែម fields ថ្មីៗ ============
+            'content_type', 'countries', 'series_types',
+            'has_khmer_dub', 'has_khmer_sub',
+            'total_episodes',  # ← បន្ថែម
         ]
     
     def get_poster_url(self, obj):
@@ -63,16 +71,14 @@ class MovieListSerializer(serializers.ModelSerializer):
         return self.get_backdrop_url(obj)
 
 
-# apps/movies/serializers.py
-
-# apps/movies/serializers.py
-
 class MovieDetailSerializer(serializers.ModelSerializer):
     """Full movie detail with genres, cast, crew, episodes."""
     genres = GenreSerializer(many=True, read_only=True)
     categories = CategorySerializer(many=True, read_only=True)
     cast = CastSerializer(many=True, read_only=True)
     crew = CrewSerializer(many=True, read_only=True)
+    countries = CountrySerializer(many=True, read_only=True)  # ← បន្ថែម
+    series_types = SeriesTypeSerializer(many=True, read_only=True)  # ← បន្ថែម
     rating = serializers.SerializerMethodField()
     year = serializers.SerializerMethodField()
     episode_count = serializers.SerializerMethodField()
@@ -99,6 +105,10 @@ class MovieDetailSerializer(serializers.ModelSerializer):
             'bunny_video_id', 
             'purchase_price',
             'episode_count',
+            # ============ បន្ថែម fields ថ្មីៗ ============
+            'content_type', 'countries', 'series_types',
+            'has_khmer_dub', 'has_khmer_sub',
+            'total_episodes',  # ← បន្ថែម
             'created_at', 'updated_at',
         ]
 
@@ -225,6 +235,13 @@ class MovieAdminSerializer(serializers.ModelSerializer):
     categories = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Category.objects.all(), required=False
     )
+    # ============ បន្ថែម fields ថ្មីៗ ============
+    countries = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=Country.objects.all(), required=False
+    )
+    series_types = serializers.PrimaryKeyRelatedField(
+        many=True, queryset=SeriesType.objects.all(), required=False
+    )
 
     def to_representation(self, instance):
         """
@@ -238,6 +255,10 @@ class MovieAdminSerializer(serializers.ModelSerializer):
         rep['categories'] = CategorySerializer(instance.categories.all(), many=True).data
         rep['cast'] = CastSerializer(instance.cast.all(), many=True).data
         rep['crew'] = CrewSerializer(instance.crew.all(), many=True).data
+        # ============ បន្ថែម ============
+        rep['countries'] = CountrySerializer(instance.countries.all(), many=True).data
+        rep['series_types'] = SeriesTypeSerializer(instance.series_types.all(), many=True).data
+        # ============ បញ្ចប់ការបន្ថែម ============
         return rep
 
     class Meta:
@@ -251,6 +272,9 @@ class MovieAdminSerializer(serializers.ModelSerializer):
             'rating', 'view_count',
             'is_featured', 'is_new_release', 'is_active',
             'genres', 'categories', 'cast', 'crew',
+            # ============ បន្ថែម field ថ្មីៗ ============
+            'content_type', 'countries', 'has_khmer_dub', 'has_khmer_sub',
+            'series_types', 'total_episodes',  # ← បន្ថែម
             'created_at', 'updated_at',
         ]
         read_only_fields = [
@@ -271,6 +295,7 @@ class MovieAdminSerializer(serializers.ModelSerializer):
             'backdrop': {'required': False},
             'purchase_price': {'required': False, 'allow_null': True},
             'trailer_url': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'total_episodes': {'required': False, 'allow_null': True},  # ← បន្ថែម
         }
 
     # ---- slug auto-generation -------------------------------------------------
@@ -291,7 +316,6 @@ class MovieAdminSerializer(serializers.ModelSerializer):
         return data
 
     # ---- Legacy server-relay upload (path 2) -------------------------------
-
 
     def _upload_to_bunny(self, movie):
         local_path = movie.video_upload.path
@@ -328,11 +352,20 @@ class MovieAdminSerializer(serializers.ModelSerializer):
 
     # ---- create / update ----------------------------------------------------
 
-def create(self, validated_data):
+    def create(self, validated_data):
         print("🔍 Creating movie with data:", validated_data.keys())
         print("🔍 bunny_video_id:", validated_data.get('bunny_video_id'))
         
+        # ============ បន្ថែមនៅទីនេះ ============
+        series_types_data = validated_data.pop('series_types', [])
+        # ============ បញ្ចប់ការបន្ថែម ============
+        
         movie = super().create(validated_data)
+        
+        # ============ បន្ថែមនៅទីនេះ ============
+        if series_types_data:
+            movie.series_types.set(series_types_data)
+        # ============ បញ្ចប់ការបន្ថែម ============
         
         # ✅ ប្រសិនបើមាន bunny_video_id ពី Frontend
         if movie.bunny_video_id:
@@ -347,9 +380,13 @@ def create(self, validated_data):
         
         return movie
 
-def update(self, instance, validated_data):
+    def update(self, instance, validated_data):
         print("🔍 Updating movie with data:", validated_data.keys())
         print("🔍 bunny_video_id:", validated_data.get('bunny_video_id'))
+        
+        # ============ បន្ថែមនៅទីនេះ ============
+        series_types_data = validated_data.pop('series_types', None)
+        # ============ បញ្ចប់ការបន្ថែម ============
         
         got_new_video_file = bool(validated_data.get('video_upload'))
         got_new_bunny_id = (
@@ -363,6 +400,11 @@ def update(self, instance, validated_data):
         )
 
         movie = super().update(instance, validated_data)
+        
+        # ============ បន្ថែមនៅទីនេះ ============
+        if series_types_data is not None:
+            movie.series_types.set(series_types_data)
+        # ============ បញ្ចប់ការបន្ថែម ============
 
         if got_new_video_file and movie.video_upload:
             print("📤 Legacy upload path...")
@@ -474,6 +516,11 @@ class HeroBannerSerializer(serializers.ModelSerializer):
             return obj.external_url
         return None
 
+# apps/movies/serializers.py (បន្ថែម)
+class SeriesTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SeriesType
+        fields = ['id', 'name', 'flag', 'slug']
 
 class HeroBannerCreateUpdateSerializer(serializers.ModelSerializer):
     """Simplified serializer for banner create/update."""
@@ -502,4 +549,3 @@ class HeroBannerCreateUpdateSerializer(serializers.ModelSerializer):
             })
 
         return data
-    

@@ -1,17 +1,9 @@
 # apps/movies/models.py
-#
-# Genre, Category, Cast, and Crew moved out to apps.taxonomy -- see that
-# app's models.py. Cross-app FK/M2M fields below reference them by the
-# 'app_label.ModelName' string form, which is required (and preferred by
-# Django) whenever a model references another app's model, since it
-# avoids a hard import dependency between the two apps.
 from django.db import models
 from django.core.validators import MinValueValidator, MaxValueValidator
 from django.utils.text import slugify
 import uuid
 
-
-# apps/movies/models.py
 
 class Movie(models.Model):
     ACCESS_TYPE_CHOICES = [
@@ -26,12 +18,11 @@ class Movie(models.Model):
     short_description = models.CharField(max_length=500, blank=True)
 
     release_date = models.DateField()
-    country = models.CharField(max_length=100)
+    country = models.CharField(max_length=100)  # ← ចាស់ ទុកដូចដើម
     language = models.CharField(max_length=100)
     duration = models.PositiveIntegerField(help_text="Duration in minutes")
 
     # ============ VIDEO FIELDS ============
-    # ✅ បន្ថែម field ថ្មីសម្រាប់ Upload Video ដោយផ្ទាល់
     video_upload = models.FileField(
         upload_to='movies/videos/',
         max_length=255,
@@ -61,12 +52,54 @@ class Movie(models.Model):
     is_new_release = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
 
-    # Relationships -- Genre/Category/Cast/Crew now live in apps.taxonomy,
-    # referenced here by the 'taxonomy.ModelName' string form.
+    # Relationships
     genres = models.ManyToManyField('taxonomy.Genre', related_name='movies')
     categories = models.ManyToManyField('taxonomy.Category', related_name='movies')
     cast = models.ManyToManyField('taxonomy.Cast', blank=True, related_name='movies')
     crew = models.ManyToManyField('taxonomy.Crew', blank=True, related_name='movies')
+
+    # ============ FIELD ថ្មីៗ ============
+    content_type = models.CharField(
+        max_length=20,
+        choices=[
+            ('movie', 'រឿងដុំ'),
+            ('tv_show', 'រឿងភាគ'),
+        ],
+        default='movie',
+        help_text='ជ្រើសរើសថាជារឿងដុំ ឬរឿងភាគ'
+    )
+
+    countries = models.ManyToManyField(
+        'taxonomy.Country',
+        related_name='movies',
+        blank=True,
+        help_text='ប្រទេសដូចជា ខ្មែរ ចិន កូរេ ជាដើម'
+    )
+
+    has_khmer_dub = models.BooleanField(
+        default=False,
+        help_text='ធីកបើមានសំឡេងនិយាយខ្មែរ'
+    )
+
+    has_khmer_sub = models.BooleanField(
+        default=False,
+        help_text='ធីកបើមានអក្សររត់ពីក្រោមខ្មែរ'
+    )
+
+    # ============ បន្ថែម fields ថ្មីៗ ============
+    series_types = models.ManyToManyField(
+        'taxonomy.SeriesType',
+        related_name='movies',
+        blank=True,
+        help_text='ប្រភេទរឿងភាគដូចជា រឿងភាគចិន ហូលីវូត ជាដើម (សម្រាប់ TV Shows)'
+    )
+
+    total_episodes = models.PositiveIntegerField(
+        blank=True,
+        null=True,
+        help_text='ចំនួនភាគសរុប (សម្រាប់ TV Shows)'
+    )
+    # ============ បញ្ចប់ការបន្ថែម ============
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -121,8 +154,14 @@ class Episode(models.Model):
     def __str__(self):
         return f"{self.movie.title} - Ep {self.episode_number}: {self.title}"
 
+# apps/movies/models.py (បន្ថែម)
+class SeriesType(models.Model):
+    name = models.CharField(max_length=100)
+    flag = models.CharField(max_length=10, blank=True)
+    slug = models.SlugField(unique=True)
 
-# បន្ថែម/កែក្នុង apps/movies/models.py
+    def __str__(self):
+        return self.name
 
 class HeroBanner(models.Model):
     """Top hero banner displayed on the landing page."""
@@ -137,7 +176,6 @@ class HeroBanner(models.Model):
     subtitle = models.TextField(blank=True, help_text="Optional subtitle")
     image = models.ImageField(upload_to='content/banners/', help_text="Recommended: 1600×900")
 
-    # ✅ NEW FIELDS
     link_type = models.CharField(max_length=10, choices=LINK_TYPE_CHOICES, default='movie')
     movie = models.ForeignKey(
         'Movie',
@@ -148,7 +186,6 @@ class HeroBanner(models.Model):
     )
     external_url = models.URLField(blank=True, null=True)
 
-    # Keep old field for backward compatibility
     link = models.URLField(blank=True, help_text="Auto-generated from movie or external_url")
 
     order = models.PositiveIntegerField(default=0)

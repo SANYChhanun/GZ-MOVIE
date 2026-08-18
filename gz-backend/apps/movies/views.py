@@ -5,7 +5,7 @@ from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Movie, Episode, HeroBanner
+from .models import Movie, Episode, HeroBanner, SeriesType
 from .serializers import (
     MovieListSerializer,
     MovieDetailSerializer,
@@ -14,6 +14,7 @@ from .serializers import (
     EpisodeSerializer,
     HeroBannerSerializer,
     HeroBannerCreateUpdateSerializer,
+    SeriesTypeSerializer,
 )
 # Genre/Category moved to apps.taxonomy -- the public genres/categories
 # actions on MovieViewSet below (used by dropdown filters, HomePage.jsx,
@@ -212,6 +213,10 @@ class HeroBannerViewSet(viewsets.ModelViewSet):
 # ADMIN ENDPOINTS
 # ============================================================
 
+# apps/movies/views.py (បន្ថែម)
+class SeriesTypeViewSet(viewsets.ModelViewSet):
+    queryset = SeriesType.objects.all()
+    serializer_class = SeriesTypeSerializer
 # apps/movies/views.py
 
 class MovieAdminViewSet(viewsets.ModelViewSet):

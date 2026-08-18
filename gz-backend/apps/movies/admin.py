@@ -1,12 +1,7 @@
 # apps/movies/admin.py
 from django.contrib import admin
 from django import forms
-from .models import Movie, Episode, HeroBanner  # Movie-app models only
-# NOTE: Genre/Category/Cast/Crew moved to apps.taxonomy. Their admin
-# registration now lives solely in apps/taxonomy/admin.py -- do NOT
-# import or @admin.register() them here too, or Django raises
-# `AlreadyRegistered` on startup since each model can only be
-# registered with the admin site once, project-wide.
+from .models import Movie, Episode, HeroBanner
 from .services.bunny_service import BunnyStreamService
 import tempfile
 import os
@@ -29,21 +24,16 @@ class MovieAdminForm(forms.ModelForm):
         if upload_file:
             print(f"Uploading {upload_file.name} to Bunny Stream...")
 
-            # បង្កើត Video ក្នុង Bunny
             video_id = BunnyStreamService.create_video(instance.title)
             if video_id:
                 print(f"Created Bunny video: {video_id}")
 
-                # រក្សាទុកឯកសារបណ្តោះអាសន្ន
                 with tempfile.NamedTemporaryFile(delete=False, suffix='.mp4') as tmp:
                     for chunk in upload_file.chunks():
                         tmp.write(chunk)
                     tmp_path = tmp.name
 
-                # Upload ទៅ Bunny
                 success = BunnyStreamService.upload_video(video_id, tmp_path)
-
-                # លុបឯកសារបណ្តោះអាសន្ន
                 os.unlink(tmp_path)
 
                 if success:
@@ -70,19 +60,31 @@ class EpisodeInline(admin.TabularInline):
 @admin.register(Movie)
 class MovieAdmin(admin.ModelAdmin):
     form = MovieAdminForm
-    list_display = ['title', 'access_type', 'is_active', 'bunny_video_id', 'created_at']
-    list_filter = ['access_type', 'is_active', 'genres']
+    list_display = ['title', 'content_type', 'access_type', 'is_active', 'bunny_video_id', 'created_at']
+    list_filter = ['content_type', 'access_type', 'is_active', 'genres']
     search_fields = ['title', 'description']
     readonly_fields = ['slug']
-    filter_horizontal = ['genres', 'categories', 'cast', 'crew']
+    filter_horizontal = ['genres', 'categories', 'countries', 'cast', 'crew']
     inlines = [EpisodeInline]
 
     fieldsets = (
         ('ព័ត៌មានមូលដ្ឋាន', {
             'fields': ('title', 'slug', 'description', 'short_description')
         }),
+        ('ប្រភេទមាតិកា', {
+            'fields': ('content_type',),
+            'description': 'ជ្រើសរើសថាជារឿងដុំ (Movie) ឬរឿងភាគ (TV Show)'
+        }),
         ('ព័ត៌មានលម្អិត', {
-            'fields': ('release_date', 'country', 'language', 'duration')
+            'fields': ('release_date', 'language', 'duration')
+        }),
+        ('ប្រទេស', {
+            'fields': ('country', 'countries'),
+            'description': 'country = ប្រទេសតែមួយ (ចាស់) | countries = ប្រទេសច្រើន (ថ្មី)'
+        }),
+        ('ភាសា និងសំឡេង', {
+            'fields': ('has_khmer_dub', 'has_khmer_sub'),
+            'description': 'ធីកបើមានសំឡេងនិយាយខ្មែរ ឬអក្សររត់ពីក្រោមខ្មែរ'
         }),
         ('រូបភាព និង វីដេអូ', {
             'fields': ('poster', 'backdrop', 'trailer_url', 'upload_to_bunny', 'bunny_video_id', 'video_file'),
@@ -111,4 +113,4 @@ class HeroBannerAdmin(admin.ModelAdmin):
     list_display = ['title', 'link_type', 'movie', 'order', 'is_active']
     list_filter = ['link_type', 'is_active']
     search_fields = ['title']
-    ordering = ['order']
+    ordering = ['order']    

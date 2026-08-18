@@ -29,19 +29,19 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
-const login = async (username, password) => {
-  try {
-    const response = await authApi.login({ username, password });
-    const { access, refresh } = response.data;
-    localStorage.setItem('gz_access_token', access);
-    localStorage.setItem('gz_refresh_token', refresh);
-    const profile = await authApi.getProfile();
-    setUser(profile.data);
-    return { success: true, user: profile.data };   // ★ បន្ថែម user
-  } catch (err) {
-    return { success: false, error: err.response?.data?.detail || 'ការចូលគណនីបរាជ័យ' };
-  }
-};
+  const login = async (username, password) => {
+    try {
+      const response = await authApi.login({ username, password });
+      const { access, refresh } = response.data;
+      localStorage.setItem('gz_access_token', access);
+      localStorage.setItem('gz_refresh_token', refresh);
+      const profile = await authApi.getProfile();
+      setUser(profile.data);
+      return { success: true, user: profile.data };
+    } catch (err) {
+      return { success: false, error: err.response?.data?.detail || 'ការចូលគណនីបរាជ័យ' };
+    }
+  };
 
   const register = async (userData) => {
     try {
@@ -65,12 +65,21 @@ const login = async (username, password) => {
     setUser(null);
   };
 
-  const isAdmin = user?.role === 'ADMIN';
+  // ★ FIX: គ្រប់ដណ្តប់ទម្រង់ field ធម្មតាបំផុតដែល backend អាចផ្ញើមក
+  // សូមកែឲ្យត្រូវនឹង field ពិតប្រាកដពី API របស់អ្នក បន្ទាប់ពី console.log(user) ពិនិត្សមើល
+  const isAdmin =
+    user?.role?.toUpperCase?.() === 'ADMIN' ||
+    user?.is_staff === true ||
+    user?.is_superuser === true ||
+    user?.is_admin === true;
+
   const isVIP = user?.is_vip === true || user?.active_subscription != null;
   const isAuthenticated = !!user;
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, register, logout, isAdmin, isVIP, isAuthenticated }}>
+    <AuthContext.Provider
+      value={{ user, loading, login, register, logout, isAdmin, isVIP, isAuthenticated }}
+    >
       {children}
     </AuthContext.Provider>
   );

@@ -36,7 +36,7 @@ export function AdminRoute({ children }) {
   }
 
   if (!isAdmin) {
-    return <Navigate to="/home" replace />;
+    return <Navigate to="/" replace />; {/* ★ FIX: "/home" → "/" ព្រោះ route "/home" មិនមានទេ */}
   }
 
   return children;

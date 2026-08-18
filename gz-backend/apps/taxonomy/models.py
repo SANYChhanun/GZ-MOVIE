@@ -21,6 +21,46 @@ class Genre(models.Model):
         return self.name
 
 
+class Country(models.Model):
+    """ប្រទេសដូចជា ខ្មែរ ចិន កូរេ ថៃ ជាដើម"""
+    name = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(max_length=120, unique=True, blank=True, allow_unicode=True)
+    flag = models.CharField(max_length=20, blank=True, help_text="Emoji flag ដូចជា 🇰🇭 🇨🇳 🇰🇷")
+
+    class Meta:
+        verbose_name_plural = 'Countries'
+        ordering = ['name']
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base = slugify(self.name, allow_unicode=True)
+            self.slug = base if base else f"country-{uuid.uuid4().hex[:8]}"
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
+# បន្ថែមបន្ទាប់ពី Country class
+class SeriesType(models.Model):
+    """ប្រភេទរឿងភាគដូចជា រឿងភាគចិន រឿងភាគហូលីវូត ជាដើម"""
+    name = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(max_length=120, unique=True, blank=True, allow_unicode=True)
+    flag = models.CharField(max_length=20, blank=True, help_text="Emoji flag ដូចជា 🇨🇳 🇺🇸 🇰🇷")
+    
+    class Meta:
+        verbose_name_plural = 'Series Types'
+        ordering = ['name']
+    
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            base = slugify(self.name, allow_unicode=True)
+            self.slug = base if base else f"series-type-{uuid.uuid4().hex[:8]}"
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return self.name
+
+
 class Category(models.Model):
     name = models.CharField(max_length=100, unique=True)
     slug = models.SlugField(max_length=120, unique=True, blank=True, allow_unicode=True)

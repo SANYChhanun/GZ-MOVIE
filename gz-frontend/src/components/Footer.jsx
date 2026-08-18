@@ -12,9 +12,17 @@ export default function Footer() {
     'រុករក': [
       { label: 'ទំព័រដើម', to: '/' },
       { label: 'ភាពយន្ត', to: '/movies' },
+      { label: 'រឿងភាគ', to: '/series' },  // ← បន្ថែម
       { label: 'រឿងថ្មីៗ', to: '/movies?sort=new' },
       { label: 'ពេញនិយម', to: '/movies?sort=popular' },
       { label: 'ឥតគិតថ្លៃ', to: '/movies?type=free' },
+    ],
+    'ប្រភេទ': [  // ← បន្ថែមផ្នែកថ្មី
+      { label: 'រឿងភាគចិន', to: '/series/type/chinese-series' },
+      { label: 'រឿងភាគហូលីវូត', to: '/series/type/hollywood-series' },
+      { label: 'រឿងភាគកូរ៉េ', to: '/series/type/korean-series' },
+      { label: 'រឿងភាគថៃ', to: '/series/type/thai-series' },
+      { label: 'រឿងភាគខ្មែរ', to: '/series/type/khmer-series' },
     ],
     'គណនី': [
       { label: user ? 'គណនីរបស់ខ្ញុំ' : 'ចូលគណនី', to: user ? '/profile' : '/login' },
@@ -45,7 +53,7 @@ export default function Footer() {
       <div className="container mx-auto px-4 md:px-16 py-12">
         
         {/* Top Section */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-8 mb-12">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-8 mb-12">  {/* ← កែសម្រួល grid */}
           
           {/* Brand Section with Logo */}
           <div className="col-span-2 md:col-span-1">

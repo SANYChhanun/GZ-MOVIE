@@ -1,43 +1,9 @@
-// src/features/admin/AddMovieDrawer.jsx — Full Code with Bunny Video ID Field
+// src/features/admin/AddMovieDrawer.jsx — Full Code with All New Fields
 import { useState, useEffect, useRef } from "react";
 import { X, UploadCloud, Loader, AlertCircle, Video, Trash2 } from "lucide-react";
 import * as tus from "tus-js-client";
 import adminApi from "../../api/adminApi";
 import { inputClass } from "../../utils/constants";
-
-// NOTE ON video upload:
-// The video file is uploaded DIRECTLY from this browser to Bunny Stream
-// using the TUS resumable protocol -- it never passes through our own
-// server. Flow:
-//   1. adminApi.initVideoUpload({ title }) asks Django to create a video
-//      slot on Bunny and hand back short-lived signed TUS credentials
-//      (no file bytes sent here).
-//   2. tus-js-client uploads the actual file straight to Bunny using
-//      those credentials, in resumable chunks -- if the connection
-//      drops mid-upload, it resumes from the last chunk instead of
-//      restarting from zero. TUS is a two-step protocol (POST to create
-//      the upload resource + get a Location, then PATCH chunks to that
-//      Location) -- tus-js-client implements this correctly.
-//
-//      ⚠️ DO NOT replace this with a hand-rolled XHR/fetch PATCH call.
-//      That has been tried twice in this project and failed both times:
-//        - Skipping the creation POST and PATCHing straight to the TUS
-//          endpoint => Bunny returns 400 "Invalid file id" (no upload
-//          resource was ever created for that id).
-//        - Sending the whole file in a single PATCH also throws away
-//          the entire point of using TUS: chunked, resumable upload.
-//      If tus-js-client is missing from node_modules, run
-//      `npm install tus-js-client` -- don't reimplement the protocol
-//      by hand.
-//   3. Once that finishes we have a Bunny `video_id` (guid). We send
-//      that as `bunny_video_id` in the normal create/update request
-//      alongside the rest of the movie's fields -- MovieAdminSerializer
-//      just derives the playable embed URL from it, no upload happens
-//      server-side at all.
-// This matters most for large files (multi-GB): the old approach routed
-// the whole file through Django first, which meant huge request bodies,
-// long-blocked workers, and a failed upload meaning starting over from
-// byte zero.
 
 const emptyForm = {
   title: "",
@@ -54,11 +20,16 @@ const emptyForm = {
   is_featured: false,
   is_new_release: false,
   is_active: true,
-  bunny_video_id: "", // ✅ Direct Bunny Video ID input
+  content_type: "movie",
+  countries: [],
+  has_khmer_dub: false,
+  has_khmer_sub: false,
+  bunny_video_id: "",
+  total_episodes: "",  // ← បន្ថែម
 };
 
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5MB
-const MAX_VIDEO_BYTES = 50 * 1024 * 1024 * 1024; // 50GB per movie
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024 * 1024;
 
 const formatBytes = (bytes) => {
   if (!bytes) return "";
@@ -80,7 +51,6 @@ const slugify = (str) =>
     .replace(/[\s_-]+/g, "-")
     .replace(/^-+|-+$/g, "");
 
-// Generic drag/drop image box used for both poster and backdrop below.
 function ImageDropBox({ preview, aspect, label, hint, onFileSelect }) {
   const [dragActive, setDragActive] = useState(false);
   const dragCounter = useRef(0);
@@ -125,10 +95,7 @@ function ImageDropBox({ preview, aspect, label, hint, onFileSelect }) {
           <>
             <img src={preview} alt={`${label} preview`} className="h-full w-full object-cover" />
             <label className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/50 transition-colors cursor-pointer">
-              <UploadCloud
-                size={16}
-                className="text-white opacity-0 group-hover:opacity-100 transition-opacity"
-              />
+              <UploadCloud size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
               <input type="file" accept="image/*" className="hidden" onChange={handleInputChange} />
             </label>
           </>
@@ -146,14 +113,11 @@ function ImageDropBox({ preview, aspect, label, hint, onFileSelect }) {
   );
 }
 
-// Styled toggle switch used for the featured/new-release/active flags below.
 function ToggleSwitch({ checked, onChange, label, description }) {
   return (
     <label
       className={`flex items-center justify-between gap-4 py-3 px-4 rounded-xl border cursor-pointer transition-colors ${
-        checked
-          ? "bg-amber-500/10 border-amber-500/40"
-          : "bg-slate-800/60 border-slate-700 hover:border-slate-600"
+        checked ? "bg-amber-500/10 border-amber-500/40" : "bg-slate-800/60 border-slate-700 hover:border-slate-600"
       }`}
       onClick={(e) => {
         e.preventDefault();
@@ -167,9 +131,7 @@ function ToggleSwitch({ checked, onChange, label, description }) {
       <span
         role="switch"
         aria-checked={checked}
-        className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${
-          checked ? "bg-amber-500" : "bg-slate-700"
-        }`}
+        className={`relative shrink-0 w-11 h-6 rounded-full transition-colors ${checked ? "bg-amber-500" : "bg-slate-700"}`}
       >
         <span
           className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform duration-200 ${
@@ -185,45 +147,34 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
   const isEdit = Boolean(movie);
 
   const [form, setForm] = useState(emptyForm);
-  const [slugTouched, setSlugTouched] = useState(false);
   const [categories, setCategories] = useState([]);
   const [genres, setGenres] = useState([]);
+  const [countries, setCountries] = useState([]);
+  const [seriesTypes, setSeriesTypes] = useState([]);  // ← បន្ថែម
   const [categoryIds, setCategoryIds] = useState([]);
   const [genreIds, setGenreIds] = useState([]);
+  const [countryIds, setCountryIds] = useState([]);
+  const [seriesTypeIds, setSeriesTypeIds] = useState([]);  // ← បន្ថែម
   const [taxonomyLoading, setTaxonomyLoading] = useState(true);
 
-  // Cover image (poster)
   const [imageFile, setImageFile] = useState(null);
   const [imagePreview, setImagePreview] = useState("");
-
-  // Backdrop image (banner / hero background)
   const [backdropFile, setBackdropFile] = useState(null);
   const [backdropPreview, setBackdropPreview] = useState("");
 
-  // Video file — picked locally, then uploaded direct-to-Bunny via TUS
   const [videoFile, setVideoFile] = useState(null);
   const [videoPreview, setVideoPreview] = useState("");
   const [bunnyVideoId, setBunnyVideoId] = useState(null);
-  // Tracks whether the admin explicitly removed the movie's existing video
-  // (edit mode, no new file picked) — sent to the backend as a clear signal.
   const [videoCleared, setVideoCleared] = useState(false);
-  // Remembers the movie's original bunny_video_id on load, so if the admin
-  // picks a new file then changes their mind and removes it, we can restore
-  // the original assignment instead of leaving the movie with no video.
   const originalBunnyVideoIdRef = useRef(null);
 
-  // Submit state
   const [submitting, setSubmitting] = useState(false);
-  // "video" while the TUS upload to Bunny is running, "saving" while the
-  // metadata request to our own API is running. Drives both the
-  // progress label and what "cancel" should abort.
   const [submitStage, setSubmitStage] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [formError, setFormError] = useState(null);
   const abortControllerRef = useRef(null);
   const tusUploadRef = useRef(null);
 
-  // Pre-fill on edit
   useEffect(() => {
     if (movie) {
       setForm({
@@ -241,11 +192,16 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
         is_featured: movie.is_featured || false,
         is_new_release: movie.is_new_release || false,
         is_active: movie.is_active ?? true,
-        bunny_video_id: movie.bunny_video_id || "", // ✅ Pre-fill bunny_video_id
+        content_type: movie.content_type || "movie",
+        has_khmer_dub: movie.has_khmer_dub || false,
+        has_khmer_sub: movie.has_khmer_sub || false,
+        bunny_video_id: movie.bunny_video_id || "",
+        total_episodes: movie.total_episodes || "",  // ← បន្ថែម
       });
-      setSlugTouched(true); // don't overwrite an existing slug automatically
       setCategoryIds((movie.categories || []).map((c) => (typeof c === "object" ? c.id : c)));
       setGenreIds((movie.genres || []).map((g) => (typeof g === "object" ? g.id : g)));
+      setCountryIds((movie.countries || []).map((c) => (typeof c === "object" ? c.id : c)));
+      setSeriesTypeIds((movie.series_types || []).map((st) => (typeof st === "object" ? st.id : st)));  // ← បន្ថែម
       setImagePreview(movie.poster || "");
       setBackdropPreview(movie.backdrop || "");
       setBunnyVideoId(movie.bunny_video_id || null);
@@ -253,17 +209,20 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     }
   }, [movie]);
 
-  // Load category/genre options
   useEffect(() => {
     (async () => {
       setTaxonomyLoading(true);
       try {
-        const [catRes, genRes] = await Promise.all([
+        const [catRes, genRes, countryRes, seriesTypeRes] = await Promise.all([
           adminApi.getCategories(),
           adminApi.getGenres(),
+          adminApi.getCountries(),
+          adminApi.getSeriesTypes(),  // ← បន្ថែម
         ]);
         setCategories(catRes.data?.results || catRes.data || []);
         setGenres(genRes.data?.results || genRes.data || []);
+        setCountries(countryRes.data?.results || countryRes.data || []);
+        setSeriesTypes(seriesTypeRes.data?.results || seriesTypeRes.data || []);  // ← បន្ថែម
       } catch (err) {
         console.error(err);
       } finally {
@@ -272,7 +231,6 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     })();
   }, []);
 
-  // Close on Escape (unless an upload is in flight)
   useEffect(() => {
     const onKeyDown = (e) => {
       if (e.key === "Escape" && !submitting) onClose();
@@ -281,34 +239,31 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [submitting, onClose]);
 
-  // Clean up any object URLs we created for previews
   useEffect(() => {
     return () => {
       if (imageFile && imagePreview) URL.revokeObjectURL(imagePreview);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imagePreview]);
 
   useEffect(() => {
     return () => {
       if (backdropFile && backdropPreview) URL.revokeObjectURL(backdropPreview);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [backdropPreview]);
+
+  useEffect(() => {
+    return () => {
+      if (videoPreview) URL.revokeObjectURL(videoPreview);
+    };
+  }, [videoPreview]);
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setForm((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
   };
 
-  // Auto-derive slug from title until the admin edits slug by hand
   const handleTitleChange = (e) => {
     setForm((prev) => ({ ...prev, title: e.target.value }));
-  };
-
-  const handleSlugChange = (e) => {
-    setSlugTouched(true);
-    setForm((prev) => ({ ...prev, slug: slugify(e.target.value) }));
   };
 
   const toggleCategory = (id) => {
@@ -319,7 +274,15 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     setGenreIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
-  // ---- Cover / backdrop image handling ----
+  const toggleCountry = (id) => {
+    setCountryIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
+  // ← បន្ថែម toggle function សម្រាប់ Series Types
+  const toggleSeriesType = (id) => {
+    setSeriesTypeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
+  };
+
   const handleImageSelect = (file, type) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
@@ -341,7 +304,6 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     }
   };
 
-  // ---- Video handling ----
   const handleVideoInputChange = (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
@@ -359,9 +321,6 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     setVideoFile(file);
     setVideoPreview(URL.createObjectURL(file));
     setVideoCleared(false);
-    // A newly picked file invalidates any previously uploaded id for
-    // this session (relevant on edit, where bunnyVideoId may have been
-    // pre-filled from the existing movie).
     setBunnyVideoId(null);
   };
 
@@ -370,22 +329,14 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     handleVideoInputChange({ target: { files: e.dataTransfer.files, value: "" } });
   };
 
-  // "Remove" button next to the video preview.
-  //  - If a newly picked local file is showing: undo the pick and go back to
-  //    whatever video the movie already had (if editing), instead of
-  //    leaving it with no video at all.
-  //  - If the movie's already-uploaded video is showing (no new file
-  //    picked): mark it for removal so saving detaches the video entirely.
   const handleRemoveVideo = () => {
     if (videoPreview) URL.revokeObjectURL(videoPreview);
     if (videoFile) {
-      // Undo the pending pick — restore the original video, if any.
       setVideoFile(null);
       setVideoPreview("");
       setBunnyVideoId(originalBunnyVideoIdRef.current);
       setVideoCleared(false);
     } else {
-      // Detach the existing video from this movie.
       setVideoFile(null);
       setVideoPreview("");
       setBunnyVideoId(null);
@@ -393,29 +344,6 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     }
   };
 
-  // Clean up the video preview blob URL on unmount.
-  useEffect(() => {
-    return () => {
-      if (videoPreview) URL.revokeObjectURL(videoPreview);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [videoPreview]);
-
-  // Uploads `file` straight to Bunny Stream via TUS (resumable, chunked),
-  // using tus-js-client -- which correctly implements the two-step TUS
-  // protocol (POST to create the upload resource, THEN PATCH chunks to
-  // the Location it returns) -- rather than a hand-rolled single PATCH.
-  //
-  // ⚠️ DO NOT replace this with a hand-rolled XHR/fetch PATCH call.
-  // That has been tried twice now and failed both times:
-  //   - Skipping the creation POST and PATCHing straight to the TUS
-  //     endpoint => Bunny returns 400 "Invalid file id" (no upload
-  //     resource was ever created for that id).
-  //   - Sending the whole file in a single PATCH also throws away the
-  //     entire point of using TUS: chunked, resumable upload.
-  // tus-js-client handles all of this correctly. If it's missing from
-  // node_modules, run `npm install tus-js-client` -- don't reimplement
-  // the protocol by hand.
   const uploadVideoDirectToBunny = (file, title) =>
     new Promise((resolve, reject) => {
       (async () => {
@@ -429,7 +357,6 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
           const res = await adminApi.initVideoUpload({ title });
           const creds = res.data;
           console.log("[bunny-upload] got credentials", creds);
-          console.log("[bunny-upload] endpoint:", creds.endpoint);
 
           const upload = new tus.Upload(file, {
             endpoint: creds.endpoint,
@@ -441,7 +368,7 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
               LibraryId: creds.library_id,
             },
             metadata: { filetype: file.type, title: file.name },
-            chunkSize: 50 * 1024 * 1024, // 50MB per chunk
+            chunkSize: 50 * 1024 * 1024,
             onError: (err) => {
               console.error("[bunny-upload] tus onError", err);
               reject(err);
@@ -458,10 +385,8 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
           });
 
           tusUploadRef.current = upload;
-          console.log("[bunny-upload] tus.Upload instance created, checking for resumable uploads…");
+          console.log("[bunny-upload] tus.Upload instance created");
 
-          // Resume a previous interrupted upload of this same file if one
-          // exists, instead of starting over from byte zero.
           const previousUploads = await upload.findPreviousUploads();
           console.log("[bunny-upload] previousUploads:", previousUploads);
           if (previousUploads.length) {
@@ -472,13 +397,8 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
           upload.start();
         } catch (err) {
           console.error("[bunny-upload] setup failed:", err);
-          console.error("status:", err?.response?.status, "data:", err?.response?.data);
           const detail = err?.response?.status
-            ? `(${err.response.status}) ${
-                typeof err.response.data === "string"
-                  ? err.response.data
-                  : JSON.stringify(err.response.data)
-              }`
+            ? `(${err.response.status}) ${JSON.stringify(err.response.data)}`
             : err?.message || "unknown error";
           reject(new Error(`Could not start the video upload — ${detail}`));
         }
@@ -493,76 +413,99 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     }
   };
 
-  // src/features/admin/AddMovieDrawer.jsx
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    console.log("[movie-save] handleSubmit fired", { isEdit, form });
 
-const handleSubmit = async (e) => {
-  e.preventDefault();
-  console.log("[movie-save] handleSubmit fired", { isEdit, form, imageFile, backdropFile, videoFile });
-
-  // ... validation code ...
-
-  console.log("[movie-save] validation passed, submitting…");
-  setSubmitting(true);
-  setFormError(null);
-  setUploadProgress(0);
-
-  // ✅ ប្រើ bunny_video_id ពី form បើមាន
-  let finalBunnyVideoId = form.bunny_video_id?.trim() || bunnyVideoId;
-
-  // ✅ ប្រសិនបើមាន videoFile (Upload ថ្មី)
-  if (videoFile) {
-    setSubmitStage("video");
-    try {
-      finalBunnyVideoId = await uploadVideoDirectToBunny(videoFile, form.title || "Untitled");
-      setBunnyVideoId(finalBunnyVideoId);
-      // ✅ Update form with new bunny_video_id
-      setForm(prev => ({ ...prev, bunny_video_id: finalBunnyVideoId }));
-    } catch (err) {
-      setFormError(
-        err?.message === "AbortError" || err?.name === "AbortError"
-          ? "Video upload canceled."
-          : err?.message || "Video upload to Bunny failed. Please try again."
-      );
-      setSubmitting(false);
-      setSubmitStage(null);
+    if (!isEdit && !imageFile) {
+      setFormError("A cover image is required.");
       return;
     }
-  }
+    if (!form.description.trim()) {
+      setFormError("Description is required.");
+      return;
+    }
+    if (!form.country.trim() || !form.language.trim()) {
+      setFormError("Country and language are required.");
+      return;
+    }
+    if (!form.duration) {
+      setFormError("Duration is required.");
+      return;
+    }
+    if (!form.release_date) {
+      setFormError("Release date is required.");
+      return;
+    }
 
-  // Step 2: save movie
-  setSubmitStage("saving");
-  setUploadProgress(0);
+    console.log("[movie-save] validation passed, submitting…");
+    setSubmitting(true);
+    setFormError(null);
+    setUploadProgress(0);
 
-  const fd = new FormData();
-  fd.append("title", form.title);
-  fd.append("description", form.description);
-  if (form.short_description) fd.append("short_description", form.short_description);
-  fd.append("country", form.country);
-  fd.append("language", form.language);
-  if (form.release_date) fd.append("release_date", form.release_date);
-  fd.append("duration", form.duration);
-  if (form.rating) fd.append("rating", form.rating);
-  fd.append("access_type", form.access_type);
-  if (form.purchase_price) fd.append("purchase_price", form.purchase_price);
-  fd.append("is_featured", String(form.is_featured));
-  fd.append("is_new_release", String(form.is_new_release));
-  fd.append("is_active", String(form.is_active));
-  categoryIds.forEach((id) => fd.append("categories", id));
-  genreIds.forEach((id) => fd.append("genres", id));
-  if (imageFile) fd.append("poster", imageFile);
-  if (backdropFile) fd.append("backdrop", backdropFile);
-  
-  // ✅ ផ្ញើ bunny_video_id (បើមាន)
-  if (finalBunnyVideoId) {
-    fd.append("bunny_video_id", finalBunnyVideoId);
-    console.log("✅ Sending bunny_video_id:", finalBunnyVideoId);
-  } else if (videoCleared) {
-    fd.append("bunny_video_id", "");
-    console.log("🗑️ Clearing video");
-  }
+    let finalBunnyVideoId = form.bunny_video_id?.trim() || bunnyVideoId;
 
+    if (videoFile && !finalBunnyVideoId) {
+      setSubmitStage("video");
+      try {
+        finalBunnyVideoId = await uploadVideoDirectToBunny(videoFile, form.title || "Untitled");
+        setBunnyVideoId(finalBunnyVideoId);
+        setForm(prev => ({ ...prev, bunny_video_id: finalBunnyVideoId }));
+      } catch (err) {
+        setFormError(
+          err?.message === "AbortError" || err?.name === "AbortError"
+            ? "Video upload canceled."
+            : err?.message || "Video upload to Bunny failed. Please try again."
+        );
+        setSubmitting(false);
+        setSubmitStage(null);
+        return;
+      }
+    }
 
+    setSubmitStage("saving");
+    setUploadProgress(0);
 
+    const fd = new FormData();
+    fd.append("title", form.title);
+    fd.append("description", form.description);
+    if (form.short_description) fd.append("short_description", form.short_description);
+    fd.append("country", form.country);
+    fd.append("language", form.language);
+    if (form.release_date) fd.append("release_date", form.release_date);
+    fd.append("duration", form.duration);
+    if (form.rating) fd.append("rating", form.rating);
+    fd.append("access_type", form.access_type);
+    if (form.purchase_price) fd.append("purchase_price", form.purchase_price);
+    fd.append("is_featured", String(form.is_featured));
+    fd.append("is_new_release", String(form.is_new_release));
+    fd.append("is_active", String(form.is_active));
+    
+    categoryIds.forEach((id) => fd.append("categories", id));
+    genreIds.forEach((id) => fd.append("genres", id));
+    
+    // New fields
+    fd.append("content_type", form.content_type || "movie");
+    fd.append("has_khmer_dub", String(form.has_khmer_dub || false));
+    fd.append("has_khmer_sub", String(form.has_khmer_sub || false));
+    countryIds.forEach((id) => fd.append("countries", id));
+    
+    // ← បន្ថែម series_types និង total_episodes
+    if (form.content_type === 'tv_show') {
+      seriesTypeIds.forEach((id) => fd.append("series_types", id));
+      if (form.total_episodes) {
+        fd.append("total_episodes", form.total_episodes);
+      }
+    }
+    
+    if (imageFile) fd.append("poster", imageFile);
+    if (backdropFile) fd.append("backdrop", backdropFile);
+    
+    if (finalBunnyVideoId) {
+      fd.append("bunny_video_id", finalBunnyVideoId);
+    } else if (videoCleared) {
+      fd.append("bunny_video_id", "");
+    }
 
     const controller = new AbortController();
     abortControllerRef.current = controller;
@@ -574,7 +517,7 @@ const handleSubmit = async (e) => {
           if (evt.total) setUploadProgress(Math.round((evt.loaded / evt.total) * 100));
         },
       };
-      console.log("[movie-save] sending", isEdit ? "PATCH" : "POST", "to /admin/movies/", Object.fromEntries(fd.entries()));
+      console.log("[movie-save] sending", isEdit ? "PATCH" : "POST", "to /admin/movies/");
       let saveRes;
       if (isEdit) {
         saveRes = await adminApi.updateMovie(movie.id, fd, config);
@@ -585,11 +528,9 @@ const handleSubmit = async (e) => {
       onSave();
     } catch (err) {
       console.error("[movie-save] save failed:", err);
-      console.error("[movie-save] response status/data:", err?.response?.status, err?.response?.data);
       if (err.code === "ERR_CANCELED" || err.name === "CanceledError") {
         setFormError("Save canceled.");
       } else {
-        console.error("Movie save failed:", JSON.stringify(err.response?.data, null, 2) || err);
         const data = err.response?.data;
         const detail =
           data && typeof data === "object"
@@ -632,7 +573,7 @@ const handleSubmit = async (e) => {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          {/* Cover poster + Backdrop / banner image */}
+          {/* Cover poster + Backdrop */}
           <div className="flex gap-4 flex-wrap sm:flex-nowrap">
             <ImageDropBox
               preview={imagePreview}
@@ -645,7 +586,7 @@ const handleSubmit = async (e) => {
               preview={backdropPreview}
               aspect="aspect-video"
               label="Backdrop / Banner"
-              hint="16:9 ratio, e.g. 1600×900. Used for the home banner. Up to 5MB."
+              hint="16:9 ratio, e.g. 1600×900. Up to 5MB."
               onFileSelect={(file) => handleImageSelect(file, "backdrop")}
             />
           </div>
@@ -663,18 +604,37 @@ const handleSubmit = async (e) => {
             />
           </div>
 
-          {/* Slug — server always generates the real one from title
-              (supports Khmer via allow_unicode), this is read-only info */}
+          {/* Content Type */}
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">
-              Slug {isEdit && <span className="text-slate-500 font-normal">(auto-generated)</span>}
+            <label className="block text-sm font-medium text-slate-300 mb-1.5">
+              ប្រភេទមាតិកា *
             </label>
-            <input
-              type="text"
-              value={isEdit ? form.slug : "បង្កើតដោយស្វ័យប្រវត្តិពេលរក្សាទុក"}
-              disabled
-              className={`${inputClass} w-full opacity-60 cursor-not-allowed`}
-            />
+            <div className="grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setForm(prev => ({ ...prev, content_type: 'movie' }))}
+                className={`py-3 px-4 rounded-xl border text-sm font-medium transition-colors ${
+                  form.content_type === 'movie'
+                    ? 'bg-amber-500/10 border-amber-500 text-amber-400'
+                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600'
+                }`}
+              >
+                <i className="bi bi-film mr-2"></i>
+                រឿងដុំ (Movie)
+              </button>
+              <button
+                type="button"
+                onClick={() => setForm(prev => ({ ...prev, content_type: 'tv_show' }))}
+                className={`py-3 px-4 rounded-xl border text-sm font-medium transition-colors ${
+                  form.content_type === 'tv_show'
+                    ? 'bg-amber-500/10 border-amber-500 text-amber-400'
+                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600'
+                }`}
+              >
+                <i className="bi bi-tv mr-2"></i>
+                រឿងភាគ (TV Show)
+              </button>
+            </div>
           </div>
 
           {/* Description */}
@@ -731,6 +691,87 @@ const handleSubmit = async (e) => {
             </div>
           </div>
 
+          {/* Countries (Multi-select) */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1.5">
+              ប្រទេស (អាចជ្រើសរើសច្រើន)
+            </label>
+            {taxonomyLoading ? (
+              <p className="text-xs text-slate-500">Loading countries…</p>
+            ) : countries.length === 0 ? (
+              <p className="text-xs text-slate-500">No countries yet.</p>
+            ) : (
+              <div className="flex flex-wrap gap-1.5">
+                {countries.map((c) => (
+                  <button
+                    key={c.id}
+                    type="button"
+                    onClick={() => toggleCountry(c.id)}
+                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                      countryIds.includes(c.id)
+                        ? "bg-amber-500 text-slate-950 border-amber-500"
+                        : "bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-600"
+                    }`}
+                  >
+                    {c.flag && <span className="mr-1">{c.flag}</span>}
+                    {c.name}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* ← បន្ថែម Series Types section សម្រាប់ TV Shows */}
+          {form.content_type === 'tv_show' && (
+            <>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                  ប្រភេទរឿងភាគ
+                </label>
+                {taxonomyLoading ? (
+                  <p className="text-xs text-slate-500">Loading series types…</p>
+                ) : seriesTypes.length === 0 ? (
+                  <p className="text-xs text-slate-500">
+                    មិនទាន់មានប្រភេទរឿងភាគទេ។ សូមបន្ថែមនៅទំព័រ "គ្រប់គ្រងប្រភេទ និងប្រទេស"
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-1.5">
+                    {seriesTypes.map((st) => (
+                      <button
+                        key={st.id}
+                        type="button"
+                        onClick={() => toggleSeriesType(st.id)}
+                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
+                          seriesTypeIds.includes(st.id)
+                            ? "bg-amber-500 text-slate-950 border-amber-500"
+                            : "bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-600"
+                        }`}
+                      >
+                        {st.flag && <span className="mr-1">{st.flag}</span>}
+                        {st.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">
+                  ចំនួនភាគសរុប
+                </label>
+                <input
+                  type="number"
+                  name="total_episodes"
+                  value={form.total_episodes || ''}
+                  onChange={handleChange}
+                  min="0"
+                  placeholder="ឧទាហរណ៍៖ 24"
+                  className={`${inputClass} w-full`}
+                />
+              </div>
+            </>
+          )}
+
           {/* Release date / duration / rating */}
           <div className="grid grid-cols-3 gap-3">
             <div>
@@ -771,7 +812,7 @@ const handleSubmit = async (e) => {
             </div>
           </div>
 
-          {/* Access type / purchase price / active */}
+          {/* Access type */}
           <div className="flex gap-4 flex-wrap">
             <div className="flex-1 min-w-[140px]">
               <label className="block text-sm font-medium text-slate-300 mb-1">Access type</label>
@@ -802,7 +843,28 @@ const handleSubmit = async (e) => {
             )}
           </div>
 
-          {/* ✅ BUNNY VIDEO ID - Direct Input Field */}
+          {/* Khmer Dub / Sub */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1.5">
+              ភាសា និងសំឡេង
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <ToggleSwitch
+                checked={form.has_khmer_dub}
+                onChange={(v) => setForm(prev => ({ ...prev, has_khmer_dub: v }))}
+                label="សំឡេងខ្មែរ"
+                description="មានសំឡេងនិយាយខ្មែរ"
+              />
+              <ToggleSwitch
+                checked={form.has_khmer_sub}
+                onChange={(v) => setForm(prev => ({ ...prev, has_khmer_sub: v }))}
+                label="អក្សររត់ខ្មែរ"
+                description="មានអក្សររត់ពីក្រោមខ្មែរ"
+              />
+            </div>
+          </div>
+
+          {/* Bunny Video ID */}
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-1">
               Bunny Video ID <span className="text-yellow-400">(បញ្ចូលដោយផ្ទាល់)</span>
@@ -816,89 +878,33 @@ const handleSubmit = async (e) => {
               className={`${inputClass} w-full font-mono text-sm`}
             />
             <p className="text-xs text-slate-500 mt-1.5">
-              បើមាន Video ID ពី Bunny រួចហើយ អាចបញ្ចូលដោយផ្ទាល់ 
-              (ទុកទទេប្រសិនបើចង់ Upload តាមឯកសារ)
+              បើមាន Video ID ពី Bunny រួចហើយ អាចបញ្ចូលដោយផ្ទាល់
             </p>
-            {form.bunny_video_id && (
-              <div className="mt-2 p-2 bg-green-500/10 border border-green-500/20 rounded-lg">
-                <p className="text-xs text-green-400">
-                  <i className="bi bi-check-circle mr-1"></i>
-                  Video ID: <span className="font-mono">{form.bunny_video_id}</span>
-                </p>
-                <p className="text-xs text-green-400/70 mt-1">
-                  Embed URL: 
-                  <span className="font-mono text-[10px] block mt-0.5 break-all">
-                    https://iframe.mediadelivery.net/embed/724838/{form.bunny_video_id}
-                  </span>
-                </p>
-              </div>
-            )}
           </div>
 
-          {/* Video file upload - show only if no bunny_video_id */}
+          {/* Video file upload */}
           {!form.bunny_video_id && (
             <div>
               <label className="block text-sm font-medium text-slate-300 mb-1.5">Movie video file</label>
-
               {videoFile && videoPreview ? (
-                // A new file was just picked locally — preview it directly.
                 <div className="rounded-xl overflow-hidden border border-slate-700 bg-black">
                   <video src={videoPreview} controls className="w-full max-h-72 bg-black" />
-                  <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-800/80 flex-wrap">
-                    <span className="text-xs text-slate-300 truncate flex items-center gap-1.5 min-w-0">
-                      <Video size={13} className="text-amber-400 shrink-0" />
-                      <span className="truncate">{videoFile.name}</span>
-                      <span className="text-slate-500 shrink-0">· {formatBytes(videoFile.size)}</span>
+                  <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-800/80">
+                    <span className="text-xs text-slate-300 truncate">
+                      <Video size={13} className="text-amber-400 inline mr-1" />
+                      {videoFile.name} · {formatBytes(videoFile.size)}
                     </span>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <label className="text-xs text-amber-400 hover:text-amber-300 cursor-pointer">
-                        ប្តូរ
-                        <input type="file" accept="video/*" className="hidden" onChange={handleVideoInputChange} />
-                      </label>
-                      <button
-                        type="button"
-                        onClick={handleRemoveVideo}
-                        className="inline-flex items-center gap-1 text-xs text-red-400 hover:text-red-300"
-                      >
-                        <Trash2 size={13} /> លុប
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              ) : isEdit && movie?.video_file && !videoCleared ? (
-                // Editing a movie that already has a video, and nothing new
-                // has been picked or cleared — show the existing video.
-                <div className="rounded-xl overflow-hidden border border-slate-700 bg-black">
-                  <iframe
-                    src={movie.video_file}
-                    className="w-full aspect-video"
-                    allow="autoplay; fullscreen"
-                    title="Current video"
-                  />
-                  <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-800/80 flex-wrap">
-                    <span className="text-xs text-slate-300 flex items-center gap-1.5">
-                      <Video size={13} className="text-amber-400 shrink-0" />
-                      វីដេអូបច្ចុប្បន្ន
-                    </span>
-                    <div className="flex items-center gap-3 shrink-0">
-                      <label className="text-xs text-amber-400 hover:text-amber-300 cursor-pointer">
-                        ជំនួសដោយឯកសារថ្មី
-                        <input type="file" accept="video/*" className="hidden" onChange={handleVideoInputChange} />
-                      </label>
-                      <button
-                        type="button"
-                        onClick={handleRemoveVideo}
-                        className="inline-flex items-center gap-1 text-xs text-red-400 hover:text-red-300"
-                      >
-                        <Trash2 size={13} /> លុប
-                      </button>
-                    </div>
+                    <button
+                      type="button"
+                      onClick={handleRemoveVideo}
+                      className="text-xs text-red-400 hover:text-red-300"
+                    >
+                      <Trash2 size={13} /> លុប
+                    </button>
                   </div>
                 </div>
               ) : (
-                // Nothing selected yet — drag & drop zone.
                 <div
-                  onDragEnter={(e) => e.preventDefault()}
                   onDragOver={(e) => e.preventDefault()}
                   onDrop={handleVideoDrop}
                   className="relative rounded-xl border-2 border-dashed border-slate-700 bg-slate-800/50 hover:border-slate-600 transition-colors"
@@ -909,23 +915,14 @@ const handleSubmit = async (e) => {
                       <span className="text-amber-400 font-medium">ចុច</span> ឬទាញឯកសារវីដេអូមកដាក់
                     </span>
                     <span className="text-xs text-slate-600">MP4, MOV, MKV — អតិបរមា 50GB</span>
-                    {videoCleared && (
-                      <span className="text-xs text-amber-500 mt-1">វីដេអូចាស់នឹងត្រូវលុបចេញពេលអ្នករក្សាទុក</span>
-                    )}
                     <input type="file" accept="video/*" className="hidden" onChange={handleVideoInputChange} />
                   </label>
                 </div>
               )}
-
-              <p className="text-xs text-slate-600 mt-1.5">
-                {isEdit
-                  ? "ទុកទទេ ដើម្បីរក្សាទុកវីដេអូបច្ចុប្បន្ន។ Upload ដោយផ្ទាល់ទៅ Bunny Stream ពេលអ្នករក្សាទុក — អតិបរមា 50GB, resumable បើ connection ដាច់។"
-                  : "ស្រេចចិត្ត — Upload ដោយផ្ទាល់ទៅ Bunny Stream ពេលអ្នករក្សាទុក។ អតិបរមា 50GB, resumable បើ connection ដាច់។"}
-              </p>
             </div>
           )}
 
-          {/* Display options — featured banner / new release / active */}
+          {/* Display options */}
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-1.5">ជម្រើសបង្ហាញ</label>
             <div className="grid sm:grid-cols-3 gap-2">
@@ -933,19 +930,16 @@ const handleSubmit = async (e) => {
                 checked={form.is_featured}
                 onChange={(v) => setForm((prev) => ({ ...prev, is_featured: v }))}
                 label="Banner ទំព័រដើម"
-                description="បង្ហាញក្នុង Banner"
               />
               <ToggleSwitch
                 checked={form.is_new_release}
                 onChange={(v) => setForm((prev) => ({ ...prev, is_new_release: v }))}
                 label="ចេញថ្មី"
-                description="សម្គាល់ថាចេញថ្មី"
               />
               <ToggleSwitch
                 checked={form.is_active}
                 onChange={(v) => setForm((prev) => ({ ...prev, is_active: v }))}
                 label="ដំណើរការ"
-                description="បើកបង្ហាញដល់អ្នកប្រើប្រាស់"
               />
             </div>
           </div>
@@ -954,9 +948,7 @@ const handleSubmit = async (e) => {
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-1.5">Categories</label>
             {taxonomyLoading ? (
-              <p className="text-xs text-slate-500">Loading categories…</p>
-            ) : categories.length === 0 ? (
-              <p className="text-xs text-slate-500">No categories yet.</p>
+              <p className="text-xs text-slate-500">Loading…</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {categories.map((c) => (
@@ -981,9 +973,7 @@ const handleSubmit = async (e) => {
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-1.5">Genres</label>
             {taxonomyLoading ? (
-              <p className="text-xs text-slate-500">Loading genres…</p>
-            ) : genres.length === 0 ? (
-              <p className="text-xs text-slate-500">No genres yet.</p>
+              <p className="text-xs text-slate-500">Loading…</p>
             ) : (
               <div className="flex flex-wrap gap-1.5">
                 {genres.map((g) => (
@@ -1015,41 +1005,25 @@ const handleSubmit = async (e) => {
             <div>
               <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
                 <span>
-                  {submitStage === "video"
-                    ? "Uploading video to Bunny Stream…"
-                    : videoFile
-                    ? "Video uploaded — saving movie details…"
-                    : "Saving…"}
+                  {submitStage === "video" ? "Uploading video…" : "Saving…"}
                 </span>
                 <span>{uploadProgress}%</span>
               </div>
               <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                <div
-                  className="h-full bg-amber-500 transition-all"
-                  style={{ width: `${uploadProgress}%` }}
-                />
+                <div className="h-full bg-amber-500 transition-all" style={{ width: `${uploadProgress}%` }} />
               </div>
             </div>
           )}
 
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-800 sticky bottom-0 bg-slate-900 pb-1 -mx-6 px-6">
-            {submitting ? (
-              <button
-                type="button"
-                onClick={handleCancelUpload}
-                className="px-4 py-2 text-sm rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700"
-              >
-                Cancel upload
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-sm rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700"
-              >
-                Cancel
-              </button>
-            )}
+          <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={onClose}
+              disabled={submitting}
+              className="px-4 py-2 text-sm rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-50"
+            >
+              Cancel
+            </button>
             <button
               type="submit"
               disabled={submitting}
