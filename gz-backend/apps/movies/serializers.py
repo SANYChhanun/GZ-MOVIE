@@ -31,7 +31,7 @@ class MovieListSerializer(serializers.ModelSerializer):
     backdrop_url = serializers.SerializerMethodField()
     poster = serializers.SerializerMethodField()  # ← បន្ថែម (alias សម្រាប់ compatibility)
     backdrop = serializers.SerializerMethodField()  # ← បន្ថែម (alias សម្រាប់ compatibility)
-    
+
     class Meta:
         model = Movie
         fields = [
@@ -46,7 +46,7 @@ class MovieListSerializer(serializers.ModelSerializer):
             'has_khmer_dub', 'has_khmer_sub',
             'total_episodes',  # ← បន្ថែម
         ]
-    
+
     def get_poster_url(self, obj):
         if obj.poster:
             request = self.context.get('request')
@@ -54,7 +54,7 @@ class MovieListSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.poster.url)
             return obj.poster.url
         return None
-    
+
     def get_backdrop_url(self, obj):
         if obj.backdrop:
             request = self.context.get('request')
@@ -62,11 +62,11 @@ class MovieListSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.backdrop.url)
             return obj.backdrop.url
         return None
-    
+
     # បន្ថែម methods ទាំងពីរនេះ (alias)
     def get_poster(self, obj):
         return self.get_poster_url(obj)
-    
+
     def get_backdrop(self, obj):
         return self.get_backdrop_url(obj)
 
@@ -102,7 +102,7 @@ class MovieDetailSerializer(serializers.ModelSerializer):
             'country', 'language',
             'trailer_url',
             'video_file',
-            'bunny_video_id', 
+            'bunny_video_id',
             'purchase_price',
             'episode_count',
             # ============ បន្ថែម fields ថ្មីៗ ============
@@ -158,23 +158,23 @@ class MovieDetailSerializer(serializers.ModelSerializer):
     def _user_can_watch(self, obj):
         request = self.context.get('request')
         user = getattr(request, 'user', None)
-        
+
         # Free movies - everyone can watch
         if obj.access_type == 'free':
             return True
-        
+
         # Not logged in
         if not user or not user.is_authenticated:
             return False
-        
+
         # Member/VIP access
         if obj.access_type == 'member':
             return getattr(user, 'has_active_membership', lambda: False)()
-        
+
         # Purchase access
         if obj.access_type == 'purchase':
             return getattr(user, 'has_purchased', lambda m: False)(obj)
-        
+
         return False
 
     def get_video_file(self, obj):
@@ -185,7 +185,7 @@ class MovieDetailSerializer(serializers.ModelSerializer):
         # ✅ FORCE: return video file regardless of permissions
         # នេះគ្រាន់តែសម្រាប់សាកល្បងប៉ុណ្ណោះ
         return obj.video_file
-        
+
         # ❌ ប្រសិនបើចង់ប្រើ permission សូមប្រើកូដខាងក្រោម
         # if self._user_can_watch(obj):
         #     return obj.video_file
@@ -300,6 +300,26 @@ class MovieAdminSerializer(serializers.ModelSerializer):
 
     # ---- slug auto-generation -------------------------------------------------
 
+    def _generate_unique_slug(self, title):
+        """
+        ★ RESTORED: this method was missing entirely from the version
+        that introduced content_type/countries/series_types. Without
+        it (and the call to it in create() below), every new Movie was
+        saved with slug='' -- the SlugField's default when nothing is
+        set. That's harmless for the very first movie, but every movie
+        created after that violates the `unique=True` constraint on
+        `slug`, and the project's custom exception handler was turning
+        that IntegrityError into the 400 Bad Request seen when adding a
+        second/third/etc. movie.
+        """
+        base = slugify(title) or 'movie'
+        slug = base
+        n = 1
+        while Movie.objects.filter(slug=slug).exists():
+            n += 1
+            slug = f"{base}-{n}"
+        return slug
+
     def validate(self, data):
         access_type = data.get(
             'access_type',
@@ -355,18 +375,26 @@ class MovieAdminSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         print("🔍 Creating movie with data:", validated_data.keys())
         print("🔍 bunny_video_id:", validated_data.get('bunny_video_id'))
-        
+
+        # ★ FIX: this call was missing entirely. `slug` is read-only (the
+        # admin form doesn't collect it), so without generating one here,
+        # Django saved every new movie with slug='' (SlugField's default
+        # when nothing is set) -- fine for the very first movie, but a
+        # UNIQUE constraint violation on every movie after that, which
+        # the custom exception handler was turning into this 400.
+        validated_data['slug'] = self._generate_unique_slug(validated_data.get('title', ''))
+
         # ============ បន្ថែមនៅទីនេះ ============
         series_types_data = validated_data.pop('series_types', [])
         # ============ បញ្ចប់ការបន្ថែម ============
-        
+
         movie = super().create(validated_data)
-        
+
         # ============ បន្ថែមនៅទីនេះ ============
         if series_types_data:
             movie.series_types.set(series_types_data)
         # ============ បញ្ចប់ការបន្ថែម ============
-        
+
         # ✅ ប្រសិនបើមាន bunny_video_id ពី Frontend
         if movie.bunny_video_id:
             print(f"✅ New TUS path - bunny_video_id: {movie.bunny_video_id}")
@@ -377,17 +405,17 @@ class MovieAdminSerializer(serializers.ModelSerializer):
             self._upload_to_bunny(movie)
         else:
             print("⚠️ No video provided")
-        
+
         return movie
 
     def update(self, instance, validated_data):
         print("🔍 Updating movie with data:", validated_data.keys())
         print("🔍 bunny_video_id:", validated_data.get('bunny_video_id'))
-        
+
         # ============ បន្ថែមនៅទីនេះ ============
         series_types_data = validated_data.pop('series_types', None)
         # ============ បញ្ចប់ការបន្ថែម ============
-        
+
         got_new_video_file = bool(validated_data.get('video_upload'))
         got_new_bunny_id = (
             'bunny_video_id' in validated_data
@@ -400,7 +428,7 @@ class MovieAdminSerializer(serializers.ModelSerializer):
         )
 
         movie = super().update(instance, validated_data)
-        
+
         # ============ បន្ថែមនៅទីនេះ ============
         if series_types_data is not None:
             movie.series_types.set(series_types_data)
@@ -516,11 +544,6 @@ class HeroBannerSerializer(serializers.ModelSerializer):
             return obj.external_url
         return None
 
-# apps/movies/serializers.py (បន្ថែម)
-class SeriesTypeSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = SeriesType
-        fields = ['id', 'name', 'flag', 'slug']
 
 class HeroBannerCreateUpdateSerializer(serializers.ModelSerializer):
     """Simplified serializer for banner create/update."""
