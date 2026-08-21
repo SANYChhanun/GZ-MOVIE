@@ -1,21 +1,32 @@
 ﻿# apps/accounts/urls.py
-from django.urls import path
-from rest_framework_simplejwt.views import TokenRefreshView
-from . import views
+from django.urls import path, include
+from rest_framework.routers import DefaultRouter
+from .views import (
+    RegisterView, 
+    LoginView, 
+    LogoutView,
+    TokenRefreshView,
+    ProfileView,
+    ChangePasswordView,
+    DeviceViewSet,
+    AdminUserViewSet,
+)
+
+router = DefaultRouter()
+router.register(r'devices', DeviceViewSet, basename='devices')
+router.register(r'admin/users', AdminUserViewSet, basename='admin-users')
 
 urlpatterns = [
     # Authentication
-    path('login/', views.CustomTokenObtainPairView.as_view(), name='token_obtain_pair'),
+    path('register/', RegisterView.as_view(), name='register'),
+    path('login/', LoginView.as_view(), name='login'),
+    path('logout/', LogoutView.as_view(), name='logout'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
-    path('register/', views.RegisterView.as_view(), name='register'),
     
-    # User Profile
-    path('profile/', views.UserProfileView.as_view(), name='user_profile'),
-    path('check-vip/', views.CheckVIPStatusView.as_view(), name='check_vip'),
-]
-
-# Admin only endpoints
-urlpatterns += [
-    path('admin/users/', views.UserListView.as_view(), name='admin_users'),
-    path('admin/users/<int:pk>/role/', views.UserRoleUpdateView.as_view(), name='admin_user_role'),
+    # Profile
+    path('profile/', ProfileView.as_view(), name='profile'),
+    path('change-password/', ChangePasswordView.as_view(), name='change-password'),
+    
+    # Devices & Admin
+    path('', include(router.urls)),
 ]

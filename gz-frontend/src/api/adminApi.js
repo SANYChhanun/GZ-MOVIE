@@ -1,92 +1,101 @@
+// src/api/adminApi.js
 import axiosClient from "./axiosClient";
 
 const adminApi = {
-    // ========== DASHBOARD ==========
-    getDashboard: () => axiosClient.get("/admin/"),
-    getUsers: () => axiosClient.get("/admin/users/"),
-    getRevenue: () => axiosClient.get("/admin/revenue/"),
-    getActivities: () => axiosClient.get("/admin/activities/"),
+  // ========== DASHBOARD ==========
+  getDashboardStats: () => axiosClient.get("/api/dashboard/stats/"),
+  getUsers: () => axiosClient.get("/auth/admin/users/"),
+  getRevenue: () => axiosClient.get("/api/dashboard/revenue/"),
+  getActivities: () => axiosClient.get("/api/dashboard/activities/"),
 
-    // ========== TAXONOMY (Genres, Countries, Categories) ==========
-    // ប្រើ /genres/, /countries/, /categories/ ដោយផ្ទាល់
-    getGenres: () => axiosClient.get('/genres/'),
-    createGenre: (data) => axiosClient.post('/genres/', data),
-    updateGenre: (id, data) => axiosClient.patch(`/genres/${id}/`, data),
-    deleteGenre: (id) => axiosClient.delete(`/genres/${id}/`),
+  // ========== EPISODES ADMIN ==========
+  getEpisodesAdmin: (movieId) => axiosClient.get("/api/admin/episodes/", { params: { movie: movieId } }),
+  createEpisode: (data) => axiosClient.post("/api/admin/episodes/", data),
+  updateEpisode: (id, data) => axiosClient.patch(`/api/admin/episodes/${id}/`, data),
+  deleteEpisode: (id) => axiosClient.delete(`/api/admin/episodes/${id}/`),
+  // ✅ initVideoUpload មានស្រាប់រួចហើយ — ប្រើសម្រាប់ episode video ដូចគ្នា
 
-    getCountries: () => axiosClient.get('/countries/'),
-    createCountry: (data) => axiosClient.post('/countries/', data),
-    updateCountry: (id, data) => axiosClient.patch(`/countries/${id}/`, data),
-    deleteCountry: (id) => axiosClient.delete(`/countries/${id}/`),
+  // ========== TAXONOMY ==========
+  getGenres: () => axiosClient.get('/api/genres/'),
+  createGenre: (data) => axiosClient.post('/api/genres/', data),
+  updateGenre: (id, data) => axiosClient.patch(`/api/genres/${id}/`, data),
+  deleteGenre: (id) => axiosClient.delete(`/api/genres/${id}/`),
 
-    getCategories: () => axiosClient.get('/categories/'),
-    createCategory: (data) => axiosClient.post('/categories/', data),
-    updateCategory: (id, data) => axiosClient.patch(`/categories/${id}/`, data),
-    deleteCategory: (id) => axiosClient.delete(`/categories/${id}/`),
+  getCountries: () => axiosClient.get('/api/countries/'),
+  createCountry: (data) => axiosClient.post('/api/countries/', data),
+  updateCountry: (id, data) => axiosClient.patch(`/api/countries/${id}/`, data),
+  deleteCountry: (id) => axiosClient.delete(`/api/countries/${id}/`),
 
-    // ========== បន្ថែម SERIES TYPES ==========
-    getSeriesTypes: () => axiosClient.get('/series-types/'),
-    createSeriesType: (data) => axiosClient.post('/series-types/', data),
-    updateSeriesType: (id, data) => axiosClient.patch(`/series-types/${id}/`, data),
-    deleteSeriesType: (id) => axiosClient.delete(`/series-types/${id}/`),
-    // ========== បញ្ចប់ការបន្ថែម ==========
+  getCategories: () => axiosClient.get('/api/categories/'),
+  createCategory: (data) => axiosClient.post('/api/categories/', data),
+  updateCategory: (id, data) => axiosClient.patch(`/api/categories/${id}/`, data),
+  deleteCategory: (id) => axiosClient.delete(`/api/categories/${id}/`),
 
-    // ========== TAXONOMY GENERIC (សម្រាប់ TaxonomyManagementPage) ==========
-    createTaxonomy: (type, data) => {
-        const endpoints = {
-            genres: '/genres/',
-            countries: '/countries/',
-            categories: '/categories/',
-            series_types: '/series-types/',  // ← កែសម្រួល៖ បន្ថែម / នៅខាងចុង
-        };
-        return axiosClient.post(endpoints[type], data);
-    },
-    
-    updateTaxonomy: (type, id, data) => {
-        const endpoints = {
-            genres: `/genres/${id}/`,
-            countries: `/countries/${id}/`,
-            categories: `/categories/${id}/`,
-            series_types: `/series-types/${id}/`,  // ← កែសម្រួល៖ បន្ថែម / នៅខាងចុង
-        };
-        return axiosClient.patch(endpoints[type], data);
-    },
-    
-    deleteTaxonomy: (type, id) => {
-        const endpoints = {
-            genres: `/genres/${id}/`,
-            countries: `/countries/${id}/`,
-            categories: `/categories/${id}/`,
-            series_types: `/series-types/${id}/`,  // ← កែសម្រួល៖ បន្ថែម / នៅខាងចុង
-        };
-        return axiosClient.delete(endpoints[type]);
-    },
+  getSeriesTypes: () => axiosClient.get('/api/series-types/'),
+  createSeriesType: (data) => axiosClient.post('/api/series-types/', data),
+  updateSeriesType: (id, data) => axiosClient.patch(`/api/series-types/${id}/`, data),
+  deleteSeriesType: (id) => axiosClient.delete(`/api/series-types/${id}/`),
 
-    // ========== BANNERS ==========
-    getBanners: () => axiosClient.get("/admin/banners/"),
-    getBanner: (id) => axiosClient.get(`/admin/banners/${id}/`),
-    createBanner: (formData) => axiosClient.post("/admin/banners/", formData),
-    updateBanner: (id, formData) => axiosClient.patch(`/admin/banners/${id}/`, formData),
-    deleteBanner: (id) => axiosClient.delete(`/admin/banners/${id}/`),
+  // ========== BANNERS ==========
+  getBanners: () => axiosClient.get("/api/movies/banners/"),
+  createBanner: (formData) => axiosClient.post("/api/movies/banners/", formData),
+  updateBanner: (id, formData) => axiosClient.patch(`/api/movies/banners/${id}/`, formData),
+  deleteBanner: (id) => axiosClient.delete(`/api/movies/banners/${id}/`),
 
-    // ========== MOVIES ==========
-    getMovies: (params) => axiosClient.get("/admin/movies/", { params }),
-    getMovie: (id) => axiosClient.get(`/admin/movies/${id}/`),
-    createMovie: (formData, config = {}) =>
-        axiosClient.post("/admin/movies/", formData, config),
-    updateMovie: (id, formData, config = {}) =>
-        axiosClient.patch(`/admin/movies/${id}/`, formData, config),
-    deleteMovie: (id) => axiosClient.delete(`/admin/movies/${id}/`),
+  // ========== MOVIES ADMIN ==========
+  // ✅ កំណែសាមញ្ញបំផុត - មិនមាន config parameter
+  getMovies: (params) => axiosClient.get("/api/admin/movies/", { params }),
+  getMovie: (id) => axiosClient.get(`/api/admin/movies/${id}/`),
+  createMovie: (formData) => axiosClient.post("/api/admin/movies/", formData),
+  updateMovie: (id, formData) => axiosClient.patch(`/api/admin/movies/${id}/`, formData),
+  deleteMovie: (id) => axiosClient.delete(`/api/admin/movies/${id}/`),
+  initVideoUpload: (data) => axiosClient.post("/api/admin/movies/init-video-upload/", data),
 
-    // Step 1 of the direct-to-Bunny TUS upload flow
-    initVideoUpload: (data) => axiosClient.post("/admin/movies/init-video-upload/", data),
+  // ========== MEMBERSHIP PLANS ==========
+  getMembershipPlans: () => axiosClient.get("/api/membership/plans/"),
+  createMembershipPlan: (data) => axiosClient.post("/api/membership/plans/", data),
+  updateMembershipPlan: (id, data) => axiosClient.patch(`/api/membership/plans/${id}/`, data),
+  deleteMembershipPlan: (id) => axiosClient.delete(`/api/membership/plans/${id}/`),
+  getPpvStats: () => axiosClient.get("/api/purchases/stats/"),
 
-    // ========== MEMBERSHIP PLANS ==========
-    getMembershipPlans: () => axiosClient.get("/admin/membership-plans/"),
-    createMembershipPlan: (data) => axiosClient.post("/admin/membership-plans/", data),
-    updateMembershipPlan: (id, data) => axiosClient.patch(`/admin/membership-plans/${id}/`, data),
-    deleteMembershipPlan: (id) => axiosClient.delete(`/admin/membership-plans/${id}/`),
-    getPpvStats: () => axiosClient.get("/admin/membership-plans/ppv_stats/"),
-};
+  // ========== PAYMENTS ADMIN ==========
+  getPayments: (params) => axiosClient.get("/api/payments/admin/", { params }),
+  getPaymentSummary: () => axiosClient.get("/api/payments/admin/summary/"),
+  getWebhookLogs: (params) => axiosClient.get("/api/payments/webhook-logs/", { params }),
+
+  // ========== GENERIC TAXONOMY (ប្រើដោយ CategoryGenreManagementPage) ==========
+
+  createTaxonomy(type, data) {
+    const map = {
+      genres: this.createGenre,
+      countries: this.createCountry,
+      categories: this.createCategory,
+      series_types: this.createSeriesType,
+    };
+    if (!map[type]) throw new Error(`Unknown taxonomy type: ${type}`);
+    return map[type](data);
+  },
+  updateTaxonomy(type, id, data) {
+    const map = {
+      genres: this.updateGenre,
+      countries: this.updateCountry,
+      categories: this.updateCategory,
+      series_types: this.updateSeriesType,
+    };
+    if (!map[type]) throw new Error(`Unknown taxonomy type: ${type}`);
+    return map[type](id, data);
+  },
+  deleteTaxonomy(type, id) {
+    const map = {
+      genres: this.deleteGenre,
+      countries: this.deleteCountry,
+      categories: this.deleteCategory,
+      series_types: this.deleteSeriesType,
+    };
+    if (!map[type]) throw new Error(`Unknown taxonomy type: ${type}`);
+    return map[type](id);
+  },
+}
+
 
 export default adminApi;

@@ -1,5 +1,6 @@
 # apps/movies/permissions.py
 from rest_framework import permissions
+from django.utils import timezone
 
 
 class MovieAccessPermission(permissions.BasePermission):
@@ -13,41 +14,56 @@ class MovieAccessPermission(permissions.BasePermission):
     """
     
     def has_permission(self, request, view):
-        # Allow list/view for everyone (detail check in has_object_permission)
+        """Check permission at view level"""
+        # Allow list for everyone
         if request.method in permissions.SAFE_METHODS:
             return True
+        
         # Write operations require admin
-        return request.user.is_authenticated and request.user.is_staff
+        return (
+            request.user.is_authenticated and 
+            request.user.is_admin()
+        )
     
     def has_object_permission(self, request, view, obj):
+        """Check permission at object level"""
         # Admin can do anything
-        if request.user.is_authenticated and request.user.is_staff:
+        if request.user.is_authenticated and request.user.is_admin():
             return True
         
+        # Read-only operations
+        if request.method in permissions.SAFE_METHODS:
+            return self._can_view_movie(request.user, obj)
+        
+        # Write operations require admin (already checked in has_permission)
+        return False
+    
+    def _can_view_movie(self, user, movie):
+        """
+        Check if user can view a specific movie.
+        
+        Args:
+            user: User instance
+            movie: Movie instance
+            
+        Returns:
+            bool: True if user can view
+        """
         # Free movies - everyone can view
-        if obj.access_type == 'free':
+        if movie.access_type == 'free':
             return True
         
-        # Member movies - require authentication + VIP
-        if obj.access_type == 'member':
-            return request.user.is_authenticated and getattr(request.user, 'is_vip', False)
-        
-        # Purchase movies - require authentication + purchase
-        if obj.access_type == 'purchase':
-            if not request.user.is_authenticated:
-                return False
-            # Check if user has purchased this movie
-            # Note: 'purchases' related_name must exist on Purchase model
-            if hasattr(obj, 'purchases'):
-                return obj.purchases.filter(user=request.user, is_active=True).exists()
+        # Not authenticated
+        if not user or not user.is_authenticated:
             return False
         
-        return False
+        # Use User model's method for access check
+        return user.has_access_to_movie(movie)
 
 
 class IsAdminOrReadOnly(permissions.BasePermission):
     """
-    Allow anyone to read (GET, HEAD, OPTIONS), but only admin to write (POST, PUT, PATCH, DELETE).
+    Allow anyone to read (GET, HEAD, OPTIONS), but only admin to write.
     Use this for public endpoints like movies list, banners, etc.
     """
     
@@ -55,15 +71,61 @@ class IsAdminOrReadOnly(permissions.BasePermission):
         # Safe methods: GET, HEAD, OPTIONS
         if request.method in permissions.SAFE_METHODS:
             return True
-        # Write methods require admin (staff)
-        return request.user.is_authenticated and request.user.is_staff
+        
+        # Write methods require admin
+        return (
+            request.user.is_authenticated and 
+            request.user.is_admin()
+        )
 
 
 class IsAdminUser(permissions.BasePermission):
     """
-    Allow only admin (staff) users.
+    Allow only admin users.
     Use this for admin-only endpoints.
     """
     
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.is_staff
+        return (
+            request.user.is_authenticated and 
+            request.user.is_admin()
+        )
+
+
+class IsVIPUser(permissions.BasePermission):
+    """
+    Allow only VIP users with active subscription.
+    Use this for member-only content.
+    """
+    
+    def has_permission(self, request, view):
+        if not request.user.is_authenticated:
+            return False
+        
+        # Admin can access everything
+        if request.user.is_admin():
+            return True
+        
+        # Check VIP subscription
+        return request.user.has_active_subscription()
+
+
+class CanPurchaseMovie(permissions.BasePermission):
+    """
+    Check if user can purchase a movie.
+    """
+    
+    def has_object_permission(self, request, view, obj):
+        if not request.user.is_authenticated:
+            return False
+        
+        # Admin can do anything
+        if request.user.is_admin():
+            return True
+        
+        # Check if already purchased
+        if request.user.has_purchased_movie(obj):
+            return False  # Already purchased
+        
+        # Check if movie is purchasable
+        return obj.access_type == 'purchase'

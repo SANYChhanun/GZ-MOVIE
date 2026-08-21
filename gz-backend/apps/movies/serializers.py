@@ -4,471 +4,364 @@ from rest_framework import serializers
 from .models import Movie, Episode, HeroBanner
 from .services.bunny_service import BunnyStreamService
 
-# Genre/Category/Cast/Crew moved to apps.taxonomy -- import their
-# serializers from there instead of defining local duplicates.
 from apps.taxonomy.serializers import (
     GenreSerializer,
     CategorySerializer,
     CastSerializer,
     CrewSerializer,
-    CountrySerializer,  # ← បន្ថែម
-    SeriesTypeSerializer,  # ← បន្ថែម
+    CountrySerializer,
+    SeriesTypeSerializer,
 )
-from apps.taxonomy.models import Genre, Category, Country, SeriesType  # ← បន្ថែម Country, SeriesType
+from apps.taxonomy.models import Genre, Category, Country, SeriesType
+
+
+class MediaURLMixin:
+    """Mixin សម្រាប់បង្កើត absolute URL សម្រាប់ media files"""
+    
+    def _get_media_url(self, media_file):
+        """បង្កើត absolute URL ពី media file"""
+        if not media_file:
+            return None
+        
+        request = self.context.get('request')
+        if request:
+            return request.build_absolute_uri(media_file.url)
+        return media_file.url
 
 
 # ============================================================
 # MOVIE SERIALIZERS
 # ============================================================
 
-class MovieListSerializer(serializers.ModelSerializer):
+class MovieListSerializer(MediaURLMixin, serializers.ModelSerializer):
     """Lightweight serializer for movie list view"""
     genres = GenreSerializer(many=True, read_only=True)
     categories = CategorySerializer(many=True, read_only=True)
-    countries = CountrySerializer(many=True, read_only=True)  # ← បន្ថែម
-    series_types = SeriesTypeSerializer(many=True, read_only=True)  # ← បន្ថែម
+    countries = CountrySerializer(many=True, read_only=True)
+    series_types = SeriesTypeSerializer(many=True, read_only=True)
+    
     poster_url = serializers.SerializerMethodField()
     backdrop_url = serializers.SerializerMethodField()
-    poster = serializers.SerializerMethodField()  # ← បន្ថែម (alias សម្រាប់ compatibility)
-    backdrop = serializers.SerializerMethodField()  # ← បន្ថែម (alias សម្រាប់ compatibility)
-
+    year = serializers.SerializerMethodField()
+    episode_count = serializers.SerializerMethodField()
+    
     class Meta:
         model = Movie
         fields = [
             'id', 'title', 'slug', 'short_description',
-            'poster', 'backdrop', 'poster_url', 'backdrop_url',  # ← បន្ថែមទាំងពីរ
-            'release_date', 'duration',
+            'poster_url', 'backdrop_url',
+            'release_date', 'year', 'duration',
             'rating', 'view_count', 'access_type',
-            'genres', 'categories', 'is_featured', 'is_new_release',
+            'genres', 'categories', 'countries', 'series_types',
+            'is_featured', 'is_new_release',
             'country', 'language',
-            # ============ បន្ថែម fields ថ្មីៗ ============
-            'content_type', 'countries', 'series_types',
-            'has_khmer_dub', 'has_khmer_sub',
-            'total_episodes',  # ← បន្ថែម
+            'content_type', 'has_khmer_dub', 'has_khmer_sub',
+            'total_episodes', 'episode_count',
         ]
-
+    
     def get_poster_url(self, obj):
-        if obj.poster:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.poster.url)
-            return obj.poster.url
-        return None
-
+        return self._get_media_url(obj.poster)
+    
     def get_backdrop_url(self, obj):
-        if obj.backdrop:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.backdrop.url)
-            return obj.backdrop.url
-        return None
-
-    # បន្ថែម methods ទាំងពីរនេះ (alias)
-    def get_poster(self, obj):
-        return self.get_poster_url(obj)
-
-    def get_backdrop(self, obj):
-        return self.get_backdrop_url(obj)
+        return self._get_media_url(obj.backdrop)
+    
+    def get_year(self, obj):
+        return obj.release_date.year if obj.release_date else None
+    
+    def get_episode_count(self, obj):
+        return obj.episodes.filter(is_active=True).count()
 
 
-class MovieDetailSerializer(serializers.ModelSerializer):
-    """Full movie detail with genres, cast, crew, episodes."""
+# apps/movies/serializers.py - MovieDetailSerializer (Fixed)
+
+class MovieDetailSerializer(MediaURLMixin, serializers.ModelSerializer):
+    """Full movie detail with genres, cast, crew, episodes"""
     genres = GenreSerializer(many=True, read_only=True)
     categories = CategorySerializer(many=True, read_only=True)
-    cast = CastSerializer(many=True, read_only=True)
-    crew = CrewSerializer(many=True, read_only=True)
-    countries = CountrySerializer(many=True, read_only=True)  # ← បន្ថែម
-    series_types = SeriesTypeSerializer(many=True, read_only=True)  # ← បន្ថែម
-    rating = serializers.SerializerMethodField()
+    countries = CountrySerializer(many=True, read_only=True)
+    series_types = SeriesTypeSerializer(many=True, read_only=True)
+    episodes = serializers.SerializerMethodField()
+    
+    poster_url = serializers.SerializerMethodField()
+    backdrop_url = serializers.SerializerMethodField()
     year = serializers.SerializerMethodField()
     episode_count = serializers.SerializerMethodField()
     video_file = serializers.SerializerMethodField()
-    poster = serializers.SerializerMethodField()  # ← បន្ថែម
-    backdrop = serializers.SerializerMethodField()  # ← បន្ថែម
-    poster_url = serializers.SerializerMethodField()
-    backdrop_url = serializers.SerializerMethodField()
-
+    can_watch = serializers.SerializerMethodField()
+    
     class Meta:
         model = Movie
         fields = [
             'id', 'title', 'slug',
             'description', 'short_description',
-            'poster', 'backdrop',  # ← ឥឡូវមាន methods សម្រាប់ទាំងពីរនេះ
             'poster_url', 'backdrop_url',
             'release_date', 'year', 'duration',
             'rating', 'view_count',
             'access_type', 'is_new_release', 'is_featured',
-            'genres', 'categories', 'cast', 'crew',
+            'genres', 'categories', 'countries', 'series_types',
+            'episodes',
             'country', 'language',
-            'trailer_url',
-            'video_file',
-            'bunny_video_id',
-            'purchase_price',
-            'episode_count',
-            # ============ បន្ថែម fields ថ្មីៗ ============
-            'content_type', 'countries', 'series_types',
-            'has_khmer_dub', 'has_khmer_sub',
-            'total_episodes',  # ← បន្ថែម
+            'trailer_url', 'video_file', 'bunny_video_id',
+            'purchase_price', 'episode_count',
+            'content_type', 'has_khmer_dub', 'has_khmer_sub',
+            'total_episodes', 'can_watch',
             'created_at', 'updated_at',
         ]
-
-    def get_rating(self, obj):
-        if obj.rating:
-            return float(obj.rating)
-        return None
-
-    def get_year(self, obj):
-        if obj.release_date:
-            return obj.release_date.year
-        return None
-
-    # បន្ថែម methods ទាំងពីរនេះ
-    def get_poster(self, obj):
-        if obj.poster:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.poster.url)
-            return obj.poster.url
-        return None
-
-    def get_backdrop(self, obj):
-        if obj.backdrop:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.backdrop.url)
-            return obj.backdrop.url
-        return None
-
+    
     def get_poster_url(self, obj):
-        if obj.poster:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.poster.url)
-            return obj.poster.url
-        return None
-
+        return self._get_media_url(obj.poster)
+    
     def get_backdrop_url(self, obj):
-        if obj.backdrop:
-            request = self.context.get('request')
-            if request:
-                return request.build_absolute_uri(obj.backdrop.url)
-            return obj.backdrop.url
+        return self._get_media_url(obj.backdrop)
+    
+    def get_year(self, obj):
+        return obj.release_date.year if obj.release_date else None
+    
+    def get_episode_count(self, obj):
+        return obj.episodes.filter(is_active=True).count()
+    
+    def get_episodes(self, obj):
+        """Get episodes only for series"""
+        if obj.content_type == 'series':
+            episodes = obj.episodes.filter(is_active=True)
+            return EpisodeSerializer(episodes, many=True, context=self.context).data
+        return []
+    
+    def get_video_file(self, obj):
+        """✅ ពិនិត្យ permission ត្រឹមត្រូវ"""
+        if self._user_can_watch(obj):
+            return obj.video_file
         return None
-
+    
+    def get_can_watch(self, obj):
+        """Check if current user can watch"""
+        return self._user_can_watch(obj)
+    
     def _user_can_watch(self, obj):
+        """
+        Check if user can watch this movie.
+        
+        Rules:
+        - Admin/Staff/Superuser: Can watch everything
+        - Free movies: Everyone can watch
+        - Member movies: Requires VIP subscription
+        - Purchase movies: Requires purchase
+        """
         request = self.context.get('request')
         user = getattr(request, 'user', None)
-
+        
+        # ✅ Admin, Staff, Superuser អាចមើលបានទាំងអស់
+        if user and user.is_authenticated:
+            if user.is_admin() or user.is_staff or user.is_superuser:
+                return True
+        
         # Free movies - everyone can watch
         if obj.access_type == 'free':
             return True
-
+        
         # Not logged in
         if not user or not user.is_authenticated:
             return False
-
-        # Member/VIP access
-        if obj.access_type == 'member':
-            return getattr(user, 'has_active_membership', lambda: False)()
-
-        # Purchase access
-        if obj.access_type == 'purchase':
-            return getattr(user, 'has_purchased', lambda m: False)(obj)
-
-        return False
-
-    def get_video_file(self, obj):
-        """
-        ✅ ប្រគល់ video_file ជានិច្ច (សម្រាប់សាកល្បង)
-        បន្ទាប់ពីសាកល្បងរួច អាចប្តូរទៅប្រើ _user_can_watch វិញ
-        """
-        # ✅ FORCE: return video file regardless of permissions
-        # នេះគ្រាន់តែសម្រាប់សាកល្បងប៉ុណ្ណោះ
-        return obj.video_file
-
-        # ❌ ប្រសិនបើចង់ប្រើ permission សូមប្រើកូដខាងក្រោម
-        # if self._user_can_watch(obj):
-        #     return obj.video_file
-        # return None
-
-    def get_episode_count(self, obj):
-        return obj.episodes.filter(is_active=True).count()
+        
+        # Check access using User model method
+        return user.has_access_to_movie(obj)
 
 
-class MovieAdminSerializer(serializers.ModelSerializer):
+# apps/movies/serializers.py
+class MovieAdminSerializer(MediaURLMixin, serializers.ModelSerializer):
     """
-    Admin CRUD serializer for MovieAdminViewSet (list/create/update/destroy).
-
-    Video handling — TWO supported paths:
-
-    1. NEW / preferred path (direct-to-Bunny, TUS resumable):
-       The frontend calls MovieAdminViewSet.init_video_upload() FIRST to
-       get TUS credentials, uploads the video file straight to Bunny
-       Stream from the browser (no video bytes ever hit this server —
-       see bunny_service.py's get_tus_upload_credentials() docstring for
-       why this matters on large files / flaky connections), and only
-       then sends this serializer a plain `bunny_video_id` string in the
-       same create/update payload as the rest of the movie's fields.
-       create()/update() below just derive `video_file` (the playable
-       embed URL) from that GUID — no upload happens here at all.
-
-    2. LEGACY / fallback path (server-relay upload):
-       The client instead uploads a raw file under `video_upload` (a
-       real FileField on the model, saved locally by Django first).
-       create()/update() detect this and push that local file to Bunny
-       Stream themselves via BunnyStreamService, populate
-       `bunny_video_id` + `video_file`, then delete the local copy. This
-       still works for small files or the Django admin site
-       (apps/movies/admin.py uses the same classmethods), but for large
-       videos (multi-GB) it blocks the request for the full upload
-       duration and has no resume support if the connection drops — the
-       TUS path above is what the React admin panel should use for
-       anything sizeable.
-
-    `slug` is read-only and auto-generated from `title` on create, since
-    the admin form doesn't collect it.
+    Admin CRUD serializer for MovieAdminViewSet.
     """
-
+    
     genres = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Genre.objects.all(), required=False
     )
     categories = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Category.objects.all(), required=False
     )
-    # ============ បន្ថែម fields ថ្មីៗ ============
     countries = serializers.PrimaryKeyRelatedField(
         many=True, queryset=Country.objects.all(), required=False
     )
     series_types = serializers.PrimaryKeyRelatedField(
         many=True, queryset=SeriesType.objects.all(), required=False
     )
-
-    def to_representation(self, instance):
-        """
-        Write side stays PK-only (form posts `categories=3&categories=5`).
-        Read side (GET list/retrieve) instead returns full {id, name, slug}
-        objects for genres/categories/cast/crew so the admin table/detail
-        drawer can show real names without a second lookup request.
-        """
-        rep = super().to_representation(instance)
-        rep['genres'] = GenreSerializer(instance.genres.all(), many=True).data
-        rep['categories'] = CategorySerializer(instance.categories.all(), many=True).data
-        rep['cast'] = CastSerializer(instance.cast.all(), many=True).data
-        rep['crew'] = CrewSerializer(instance.crew.all(), many=True).data
-        # ============ បន្ថែម ============
-        rep['countries'] = CountrySerializer(instance.countries.all(), many=True).data
-        rep['series_types'] = SeriesTypeSerializer(instance.series_types.all(), many=True).data
-        # ============ បញ្ចប់ការបន្ថែម ============
-        return rep
-
+    poster_url = serializers.SerializerMethodField(read_only=True)
+    backdrop_url = serializers.SerializerMethodField(read_only=True)
+    
     class Meta:
         model = Movie
         fields = [
             'id', 'title', 'slug', 'description', 'short_description',
             'release_date', 'country', 'language', 'duration',
-            'poster', 'backdrop',
+            'poster', 'backdrop', 'poster_url', 'backdrop_url',
             'trailer_url', 'video_file', 'bunny_video_id', 'video_upload',
             'access_type', 'purchase_price',
             'rating', 'view_count',
             'is_featured', 'is_new_release', 'is_active',
-            'genres', 'categories', 'cast', 'crew',
-            # ============ បន្ថែម field ថ្មីៗ ============
-            'content_type', 'countries', 'has_khmer_dub', 'has_khmer_sub',
-            'series_types', 'total_episodes',  # ← បន្ថែម
+            'genres', 'categories',
+            'countries', 'series_types',
+            'content_type', 'has_khmer_dub', 'has_khmer_sub',
+            'total_episodes',
             'created_at', 'updated_at',
         ]
         read_only_fields = [
-            'id', 'slug', 'rating', 'view_count', 'created_at', 'updated_at',
-            # video_file is always derived (either here or in
-            # _upload_to_bunny) from a bunny_video_id -- never accepted
-            # as raw client input.
-            'video_file',
+            'id', 'slug', 'rating', 'view_count',
+            'created_at', 'updated_at', 'video_file',
         ]
         extra_kwargs = {
             'video_upload': {'required': False, 'write_only': True},
-            # Writable now: the TUS path (path 1 above) sets this
-            # directly once the browser's direct-to-Bunny upload
-            # finishes. Still populated automatically by the legacy
-            # path (path 2) when video_upload is used instead.
             'bunny_video_id': {'required': False, 'allow_blank': True, 'allow_null': True},
             'poster': {'required': False},
             'backdrop': {'required': False},
-            'purchase_price': {'required': False, 'allow_null': True},
+            'purchase_price': {'required': False, 'allow_null': True},  # ✅ គ្មាន allow_blank
             'trailer_url': {'required': False, 'allow_blank': True, 'allow_null': True},
-            'total_episodes': {'required': False, 'allow_null': True},  # ← បន្ថែម
+            'total_episodes': {'required': False, 'allow_null': True},  # ✅ គ្មាន allow_blank
+            'access_type': {'required': False, 'default': 'free'},
         }
-
-    # ---- slug auto-generation -------------------------------------------------
-
+    
+    def get_poster_url(self, obj):
+        return self._get_media_url(obj.poster)
+    
+    def get_backdrop_url(self, obj):
+        return self._get_media_url(obj.backdrop)
+    
+    def to_representation(self, instance):
+        """Return full objects for M2M fields in read operations"""
+        rep = super().to_representation(instance)
+        rep['genres'] = GenreSerializer(instance.genres.all(), many=True).data
+        rep['categories'] = CategorySerializer(instance.categories.all(), many=True).data
+        rep['countries'] = CountrySerializer(instance.countries.all(), many=True).data
+        rep['series_types'] = SeriesTypeSerializer(instance.series_types.all(), many=True).data
+        return rep
+    
     def _generate_unique_slug(self, title):
-        """
-        ★ RESTORED: this method was missing entirely from the version
-        that introduced content_type/countries/series_types. Without
-        it (and the call to it in create() below), every new Movie was
-        saved with slug='' -- the SlugField's default when nothing is
-        set. That's harmless for the very first movie, but every movie
-        created after that violates the `unique=True` constraint on
-        `slug`, and the project's custom exception handler was turning
-        that IntegrityError into the 400 Bad Request seen when adding a
-        second/third/etc. movie.
-        """
+        """Generate unique slug from title"""
         base = slugify(title) or 'movie'
         slug = base
-        n = 1
+        counter = 1
         while Movie.objects.filter(slug=slug).exists():
-            n += 1
-            slug = f"{base}-{n}"
+            counter += 1
+            slug = f"{base}-{counter}"
         return slug
-
+    
     def validate(self, data):
-        access_type = data.get(
-            'access_type',
-            getattr(self.instance, 'access_type', None) or 'free'
-        )
-        purchase_price = data.get(
-            'purchase_price',
-            getattr(self.instance, 'purchase_price', None)
-        )
-        if access_type == 'purchase' and not purchase_price:
-            raise serializers.ValidationError(
-                {'purchase_price': 'Required when access type is Pay Per View.'}
-            )
+        """Validate movie data with access_type handling"""
+        access_type = data.get('access_type', getattr(self.instance, 'access_type', 'free'))
+        purchase_price = data.get('purchase_price', getattr(self.instance, 'purchase_price', None))
+        
+        # ពិនិត្យ purchase price សម្រាប់ access_type='purchase'
+        if access_type == 'purchase':
+            if purchase_price is None or purchase_price == '':
+                raise serializers.ValidationError({
+                    'purchase_price': 'Purchase price is required when access type is Pay Per View.'
+                })
+            
+            try:
+                price = float(purchase_price)
+                if price <= 0:
+                    raise serializers.ValidationError({
+                        'purchase_price': 'Purchase price must be greater than 0.'
+                    })
+            except (TypeError, ValueError):
+                raise serializers.ValidationError({
+                    'purchase_price': 'Purchase price must be a valid number.'
+                })
+        
+        # សម្រាប់ free និង member - មិនត្រូវការ purchase_price
+        if access_type in ['free', 'member']:
+            data['purchase_price'] = None
+        
         return data
-
-    # ---- Legacy server-relay upload (path 2) -------------------------------
-
+    
+    def create(self, validated_data):
+        """Create movie with slug and video handling"""
+        validated_data['slug'] = self._generate_unique_slug(validated_data.get('title', ''))
+        
+        series_types_data = validated_data.pop('series_types', [])
+        genres_data = validated_data.pop('genres', [])
+        categories_data = validated_data.pop('categories', [])
+        countries_data = validated_data.pop('countries', [])
+        
+        if validated_data.get('access_type') != 'purchase':
+            validated_data['purchase_price'] = None
+        
+        movie = super().create(validated_data)
+        
+        if series_types_data:
+            movie.series_types.set(series_types_data)
+        if genres_data:
+            movie.genres.set(genres_data)
+        if categories_data:
+            movie.categories.set(categories_data)
+        if countries_data:
+            movie.countries.set(countries_data)
+        
+        self._handle_video(movie)
+        return movie
+    
+    def update(self, instance, validated_data):
+        """Update movie"""
+        series_types_data = validated_data.pop('series_types', None)
+        genres_data = validated_data.pop('genres', None)
+        categories_data = validated_data.pop('categories', None)
+        countries_data = validated_data.pop('countries', None)
+        
+        if validated_data.get('access_type', instance.access_type) != 'purchase':
+            validated_data['purchase_price'] = None
+        
+        movie = super().update(instance, validated_data)
+        
+        if series_types_data is not None:
+            movie.series_types.set(series_types_data)
+        if genres_data is not None:
+            movie.genres.set(genres_data)
+        if categories_data is not None:
+            movie.categories.set(categories_data)
+        if countries_data is not None:
+            movie.countries.set(countries_data)
+        
+        self._handle_video(movie, is_update=True)
+        return movie
+    
+    def _handle_video(self, movie, is_update=False):
+        """Handle video upload"""
+        if movie.bunny_video_id:
+            movie.video_file = BunnyStreamService.get_embed_url(movie.bunny_video_id)
+            movie.save(update_fields=['video_file'])
+        elif movie.video_upload:
+            self._upload_to_bunny(movie)
+    
     def _upload_to_bunny(self, movie):
+        """Upload video to Bunny Stream"""
         local_path = movie.video_upload.path
-
+        
         guid = BunnyStreamService.create_video(movie.title)
         if not guid:
-            raise serializers.ValidationError(
-                {'video_upload': 'Failed to create video on Bunny Stream. Check BUNNY_STREAM_API_KEY / BUNNY_STREAM_LIBRARY_ID.'}
-            )
-
+            raise serializers.ValidationError({
+                'video_upload': 'Failed to create video on Bunny Stream.'
+            })
+        
         success = BunnyStreamService.upload_video(guid, local_path)
         if not success:
-            raise serializers.ValidationError(
-                {'video_upload': 'Failed to upload video to Bunny Stream. Check server logs for details.'}
-            )
-
+            raise serializers.ValidationError({
+                'video_upload': 'Failed to upload video to Bunny Stream.'
+            })
+        
         movie.bunny_video_id = guid
         movie.video_file = BunnyStreamService.get_embed_url(guid)
-        # Drop the local copy now that Bunny has it -- comment out the next line if
-        # you'd rather keep a local backup of every uploaded video.
         movie.video_upload.delete(save=False)
         movie.save(update_fields=['bunny_video_id', 'video_file', 'video_upload'])
 
-    # ---- New direct-to-Bunny path (path 1) ---------------------------------
-
-    def _finalize_from_bunny_video_id(self, movie):
-        """
-        The browser already uploaded the video straight to Bunny via TUS
-        and we just received the resulting GUID as `bunny_video_id` on
-        this movie. Just derive the embed URL -- no upload to do here.
-        """
-        movie.video_file = BunnyStreamService.get_embed_url(movie.bunny_video_id)
-        movie.save(update_fields=['video_file'])
-
-    # ---- create / update ----------------------------------------------------
-
-    def create(self, validated_data):
-        print("🔍 Creating movie with data:", validated_data.keys())
-        print("🔍 bunny_video_id:", validated_data.get('bunny_video_id'))
-
-        # ★ FIX: this call was missing entirely. `slug` is read-only (the
-        # admin form doesn't collect it), so without generating one here,
-        # Django saved every new movie with slug='' (SlugField's default
-        # when nothing is set) -- fine for the very first movie, but a
-        # UNIQUE constraint violation on every movie after that, which
-        # the custom exception handler was turning into this 400.
-        validated_data['slug'] = self._generate_unique_slug(validated_data.get('title', ''))
-
-        # ============ បន្ថែមនៅទីនេះ ============
-        series_types_data = validated_data.pop('series_types', [])
-        # ============ បញ្ចប់ការបន្ថែម ============
-
-        movie = super().create(validated_data)
-
-        # ============ បន្ថែមនៅទីនេះ ============
-        if series_types_data:
-            movie.series_types.set(series_types_data)
-        # ============ បញ្ចប់ការបន្ថែម ============
-
-        # ✅ ប្រសិនបើមាន bunny_video_id ពី Frontend
-        if movie.bunny_video_id:
-            print(f"✅ New TUS path - bunny_video_id: {movie.bunny_video_id}")
-            self._finalize_from_bunny_video_id(movie)
-        elif movie.video_upload:
-            # Legacy upload path
-            print("📤 Legacy upload path...")
-            self._upload_to_bunny(movie)
-        else:
-            print("⚠️ No video provided")
-
-        return movie
-
-    def update(self, instance, validated_data):
-        print("🔍 Updating movie with data:", validated_data.keys())
-        print("🔍 bunny_video_id:", validated_data.get('bunny_video_id'))
-
-        # ============ បន្ថែមនៅទីនេះ ============
-        series_types_data = validated_data.pop('series_types', None)
-        # ============ បញ្ចប់ការបន្ថែម ============
-
-        got_new_video_file = bool(validated_data.get('video_upload'))
-        got_new_bunny_id = (
-            'bunny_video_id' in validated_data
-            and validated_data['bunny_video_id']
-            and validated_data['bunny_video_id'] != instance.bunny_video_id
-        )
-        got_video_cleared = (
-            'bunny_video_id' in validated_data
-            and not validated_data['bunny_video_id']
-        )
-
-        movie = super().update(instance, validated_data)
-
-        # ============ បន្ថែមនៅទីនេះ ============
-        if series_types_data is not None:
-            movie.series_types.set(series_types_data)
-        # ============ បញ្ចប់ការបន្ថែម ============
-
-        if got_new_video_file and movie.video_upload:
-            print("📤 Legacy upload path...")
-            self._upload_to_bunny(movie)
-        elif got_new_bunny_id:
-            print(f"✅ New TUS path - bunny_video_id: {movie.bunny_video_id}")
-            self._finalize_from_bunny_video_id(movie)
-        elif got_video_cleared:
-            print("🗑️ Clearing video")
-            movie.video_file = None
-            movie.save(update_fields=['video_file'])
-
-        return movie
-
 
 class MovieVideoUploadInitSerializer(serializers.Serializer):
-    """
-    Step 1 of the direct-to-Bunny (TUS) upload flow.
-
-    The admin panel calls MovieAdminViewSet.init_video_upload() with just
-    a title; we create a video "slot" on Bunny Stream and hand back the
-    signed TUS credentials the browser needs to upload the actual file
-    bytes straight to Bunny -- this server never touches them.
-
-    After that upload finishes client-side, the frontend sends the
-    resulting `video_id` (guid) back as `bunny_video_id` in a normal
-    create/update call to MovieAdminSerializer above.
-    """
+    """Serializer for initiating video upload"""
     title = serializers.CharField(max_length=255)
-
+    
     def create(self, validated_data):
         guid = BunnyStreamService.create_video(validated_data['title'])
         if not guid:
             raise serializers.ValidationError(
-                "Failed to create video slot on Bunny Stream. "
-                "Check BUNNY_STREAM_API_KEY / BUNNY_STREAM_LIBRARY_ID."
+                "Failed to create video slot on Bunny Stream."
             )
         return BunnyStreamService.get_tus_upload_credentials(guid)
 
@@ -478,9 +371,17 @@ class MovieVideoUploadInitSerializer(serializers.Serializer):
 # ============================================================
 
 class EpisodeSerializer(serializers.ModelSerializer):
+    """Episode serializer"""
+    movie_title = serializers.CharField(source='movie.title', read_only=True)
+    
     class Meta:
         model = Episode
-        fields = '__all__'
+        fields = [
+            'id', 'movie', 'movie_title', 'title', 'episode_number',
+            'description', 'video_file', 'bunny_video_id',
+            'duration', 'thumbnail', 'view_count', 'is_active',
+            'created_at', 'updated_at',
+        ]
 
 
 # ============================================================
@@ -488,7 +389,7 @@ class EpisodeSerializer(serializers.ModelSerializer):
 # ============================================================
 
 class HeroBannerSerializer(serializers.ModelSerializer):
-    """Full banner serializer with movie details."""
+    """Full banner serializer with movie details"""
     movie_id = serializers.IntegerField(source='movie.id', read_only=True, allow_null=True)
     movie_title = serializers.CharField(source='movie.title', read_only=True, allow_null=True)
     movie_slug = serializers.CharField(source='movie.slug', read_only=True, allow_null=True)
@@ -496,58 +397,58 @@ class HeroBannerSerializer(serializers.ModelSerializer):
     movie_rating = serializers.SerializerMethodField()
     movie_year = serializers.SerializerMethodField()
     link_url = serializers.SerializerMethodField()
-    image = serializers.SerializerMethodField()  # ← បន្ថែមនេះ
-
+    image_url = serializers.SerializerMethodField()
+    
     class Meta:
         model = HeroBanner
         fields = [
-            'id', 'title', 'subtitle', 'image',
-            'link_type', 'link', 'link_url',
-            'movie_id', 'movie_title', 'movie_slug',
-            'movie_poster', 'movie_rating', 'movie_year',
-            'external_url',
+            'id', 'title', 'subtitle', 'image', 'image_url',
+            'link_type', 'movie', 'movie_id', 'external_url', 'link_url',
+            'movie_title', 'movie_slug', 'movie_poster',
+            'movie_rating', 'movie_year',
             'order', 'is_active',
             'created_at', 'updated_at',
         ]
         read_only_fields = ['created_at', 'updated_at']
-
-    def get_image(self, obj):  # ← បន្ថែម method នេះ
+    
+    def get_image_url(self, obj):
+        """Get full image URL"""
         if obj.image:
             request = self.context.get('request')
             if request:
                 return request.build_absolute_uri(obj.image.url)
             return obj.image.url
         return None
-
+    
     def get_movie_poster(self, obj):
+        """Get movie poster URL"""
         if obj.movie and obj.movie.poster:
             request = self.context.get('request')
             if request:
                 return request.build_absolute_uri(obj.movie.poster.url)
             return obj.movie.poster.url
         return None
-
+    
     def get_movie_rating(self, obj):
+        """Get movie rating"""
         if obj.movie and obj.movie.rating:
             return float(obj.movie.rating)
         return None
-
+    
     def get_movie_year(self, obj):
+        """Get movie release year"""
         if obj.movie and obj.movie.release_date:
             return obj.movie.release_date.year
         return None
-
+    
     def get_link_url(self, obj):
-        if obj.link_type == 'movie' and obj.movie_id:
-            return f"/watch/{obj.movie_id}"
-        elif obj.link_type == 'external' and obj.external_url:
-            return obj.external_url
-        return None
+        """Get banner link URL"""
+        return obj.get_link_url()
 
 
 class HeroBannerCreateUpdateSerializer(serializers.ModelSerializer):
-    """Simplified serializer for banner create/update."""
-
+    """Simplified serializer for banner create/update"""
+    
     class Meta:
         model = HeroBanner
         fields = [
@@ -555,20 +456,71 @@ class HeroBannerCreateUpdateSerializer(serializers.ModelSerializer):
             'link_type', 'movie', 'external_url',
             'order', 'is_active',
         ]
-
+    
     def validate(self, data):
         link_type = data.get('link_type', 'movie')
         movie = data.get('movie')
         external_url = data.get('external_url')
-
+        
         if link_type == 'movie' and not movie:
             raise serializers.ValidationError({
                 'movie': 'Please select a movie.'
             })
-
+        
         if link_type == 'external' and not external_url:
             raise serializers.ValidationError({
                 'external_url': 'Please provide an external URL.'
             })
-
+        
         return data
+
+# ============================================================
+# EPISODE ADMIN SERIALIZER
+# ============================================================
+
+class EpisodeAdminSerializer(serializers.ModelSerializer):
+    """
+    Admin CRUD serializer for Episode.
+
+    Video handling mirrors MovieAdminSerializer: the frontend uploads
+    directly to Bunny Stream via TUS (using the same
+    /api/admin/movies/init-video-upload/ endpoint), then sends back
+    just the resulting bunny_video_id. This serializer turns that
+    bunny_video_id into a playable embed URL on save — no video bytes
+    ever pass through this serializer or the Django server.
+    """
+    movie_title = serializers.CharField(source='movie.title', read_only=True)
+
+    class Meta:
+        model = Episode
+        fields = [
+            'id', 'movie', 'movie_title', 'title', 'episode_number',
+            'description', 'video_file', 'bunny_video_id',
+            'duration', 'thumbnail', 'view_count', 'is_active',
+            'created_at', 'updated_at',
+        ]
+        read_only_fields = ['id', 'view_count', 'video_file', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'bunny_video_id': {'required': False, 'allow_blank': True, 'allow_null': True},
+            'thumbnail': {'required': False},
+            'description': {'required': False, 'allow_blank': True},
+        }
+
+    def create(self, validated_data):
+        episode = super().create(validated_data)
+        self._sync_video_file(episode)
+        return episode
+
+    def update(self, instance, validated_data):
+        episode = super().update(instance, validated_data)
+        self._sync_video_file(episode)
+        return episode
+
+    def _sync_video_file(self, episode):
+        """
+        If bunny_video_id is set (from a completed TUS upload on the
+        frontend), (re)generate the video_file embed URL from it.
+        """
+        if episode.bunny_video_id:
+            episode.video_file = BunnyStreamService.get_embed_url(episode.bunny_video_id)
+            episode.save(update_fields=['video_file'])

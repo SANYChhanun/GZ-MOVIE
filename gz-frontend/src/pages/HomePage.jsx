@@ -2,13 +2,14 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { moviesApi } from '../api/moviesApi';
+import moviesApi from '../api/moviesApi';
 import Header from '../components/Header';
 import Footer from '../components/Footer';
 import MovieCard from '../components/movie/MovieCard';
 
 export default function HomePage() {
-  const { user, isVIP } = useAuth();
+  const { user } = useAuth();
+  const isVIP = user?.is_vip || false;  // ✅ ទាញយកពី user object
   const navigate = useNavigate();
 
   // ============ STATE (រក្សាទុកដដែល + បន្ថែមថ្មី) ============
@@ -26,82 +27,73 @@ export default function HomePage() {
   const bannerTimerRef = useRef(null);
 
   // ============ FETCH ALL DATA (រក្សាទុកដដែល) ============
-  const fetchAllData = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      const [
-        bannersRes,
-        featuredRes,
-        popularRes,
-        newRes,
-        freeRes,
-        genresRes,
-      ] = await Promise.allSettled([
-        moviesApi.getBanners(),
-        moviesApi.getFeatured(),
-        moviesApi.getPopular(),
-        moviesApi.getNewReleases(),
-        moviesApi.getFree(),
-        moviesApi.getGenres(),
-      ]);
+// ក្នុង HomePage.jsx កែ fetchAllData function
 
-      // Banner data
-      if (bannersRes.status === 'fulfilled' && bannersRes.value.data?.length > 0) {
-        setBanners(bannersRes.value.data);
-      }
+const fetchAllData = useCallback(async () => {
+  setLoading(true);
+  setError(null);
+  
+  try {
+    const [
+      bannersRes,
+      featuredRes,
+      popularRes,
+      newRes,
+      freeRes,
+      genresRes,
+    ] = await Promise.allSettled([
+      moviesApi.getBanners(),
+      moviesApi.getFeaturedMovies(),  // ✅ កែឈ្មោះ method
+      moviesApi.getPopularMovies(),   // ✅ កែឈ្មោះ method
+      moviesApi.getNewReleases(),     // ✅ កែឈ្មោះ method
+      moviesApi.getFreeMovies(),      // ✅ កែឈ្មោះ method
+      moviesApi.getGenres(),          // ✅ កែឈ្មោះ method
+    ]);
 
-      // Featured movies (ប្រើជា fallback សម្រាប់ banner)
-      if (featuredRes.status === 'fulfilled' && featuredRes.value.data?.results?.length > 0) {
-        setFeaturedMovies(featuredRes.value.data.results);
-      } else if (featuredRes.status === 'fulfilled' && featuredRes.value.data?.length > 0) {
-        setFeaturedMovies(featuredRes.value.data);
-      }
-
-      // Trending/Popular movies
-      if (popularRes.status === 'fulfilled' && popularRes.value.data?.results?.length > 0) {
-        setTrendingMovies(popularRes.value.data.results);
-      } else if (popularRes.status === 'fulfilled' && popularRes.value.data?.length > 0) {
-        setTrendingMovies(popularRes.value.data);
-      }
-
-      // New Releases - សំខាន់៖ តម្រៀបតាមថ្ងៃបន្ថែមថ្មី
-      if (newRes.status === 'fulfilled' && newRes.value.data?.results?.length > 0) {
-        const sortedNew = [...newRes.value.data.results].sort((a, b) => {
-          const dateA = new Date(a.created_at || a.release_date || 0);
-          const dateB = new Date(b.created_at || b.release_date || 0);
-          return dateB - dateA;
-        });
-        setNewReleases(sortedNew);
-      } else if (newRes.status === 'fulfilled' && newRes.value.data?.length > 0) {
-        const sortedNew = [...newRes.value.data].sort((a, b) => {
-          const dateA = new Date(a.created_at || a.release_date || 0);
-          const dateB = new Date(b.created_at || b.release_date || 0);
-          return dateB - dateA;
-        });
-        setNewReleases(sortedNew);
-      }
-
-      // Free movies
-      if (freeRes.status === 'fulfilled' && freeRes.value.data?.results?.length > 0) {
-        setFreeMovies(freeRes.value.data.results);
-      } else if (freeRes.status === 'fulfilled' && freeRes.value.data?.length > 0) {
-        setFreeMovies(freeRes.value.data);
-      }
-
-      // Genres
-      if (genresRes.status === 'fulfilled' && genresRes.value.data?.length > 0) {
-        setGenres(genresRes.value.data);
-      }
-
-    } catch (err) {
-      console.error('Failed to load homepage data:', err);
-      setError('មិនអាចទាញយកទិន្នន័យបានទេ។ សូមព្យាយាមម្តងទៀត។');
-    } finally {
-      setLoading(false);
+    // កែការទាញយកទិន្នន័យ - ដោយសារ custom actions ប្រគល់ជា array ផ្ទាល់
+    if (bannersRes.status === 'fulfilled') {
+      setBanners(bannersRes.value.data || []);
     }
-  }, []);
+
+    if (featuredRes.status === 'fulfilled') {
+      setFeaturedMovies(featuredRes.value.data || []);
+    }
+
+    if (popularRes.status === 'fulfilled') {
+      const data = popularRes.value.data;
+      // ពិនិត្យថាជា array ឬមាន results
+      setTrendingMovies(Array.isArray(data) ? data : (data?.results || []));
+    }
+
+    if (newRes.status === 'fulfilled') {
+      const data = newRes.value.data;
+      const newMovies = Array.isArray(data) ? data : (data?.results || []);
+      
+      // តម្រៀបតាមថ្ងៃបន្ថែមថ្មី
+      const sortedNew = [...newMovies].sort((a, b) => {
+        const dateA = new Date(a.created_at || a.release_date || 0);
+        const dateB = new Date(b.created_at || b.release_date || 0);
+        return dateB - dateA;
+      });
+      setNewReleases(sortedNew);
+    }
+
+    if (freeRes.status === 'fulfilled') {
+      const data = freeRes.value.data;
+      setFreeMovies(Array.isArray(data) ? data : (data?.results || []));
+    }
+
+    if (genresRes.status === 'fulfilled') {
+      setGenres(genresRes.value.data || []);
+    }
+
+  } catch (err) {
+    console.error('Failed to load homepage data:', err);
+    setError('មិនអាចទាញយកទិន្នន័យបានទេ។ សូមព្យាយាមម្តងទៀត។');
+  } finally {
+    setLoading(false);
+  }
+}, []);
 
   useEffect(() => {
     fetchAllData();
@@ -211,22 +203,42 @@ export default function HomePage() {
         >
           {/* Background Image with Smooth Crossfade */}
           <div className="absolute inset-0">
-                       {bannerItems.map((banner, index) => {
+                {bannerItems.map((banner, index) => {
               const isActive = index === currentBannerIndex;
               
-              // ប្រើ poster_url ឬ backdrop_url ជំនួស poster និង backdrop
+              // ✅ កែលំដាប់នៃការពិនិត្យ image URL ឱ្យត្រឹមត្រូវ
               const imageUrl = 
-                banner.image || 
-                banner.backdrop_url || 
-                banner.backdrop || 
-                banner.poster_url || 
-                banner.poster || 
-                banner.movie_backdrop || 
-                banner.movie_poster || 
-                '/images/placeholder-banner.jpg';
+                banner.image_url ||      // ✅ ពិនិត្យ image_url មុនគេ
+                banner.image ||           // បន្ទាប់មក image
+                banner.backdrop_url ||    // បន្ទាប់មក backdrop_url
+                banner.backdrop ||        // បន្ទាប់មក backdrop
+                banner.poster_url ||      // បន្ទាប់មក poster_url
+                banner.movie_poster ||    // បន្ទាប់មក movie_poster
+                '/images/placeholder-banner.jpg';  // Fallback ចុងក្រោយ
               
-              console.log(`[HomePage Banner ${index}] imageUrl:`, imageUrl);
-              console.log(`[HomePage Banner ${index}] banner:`, banner);
+              // ✅ កែការបង្កើត full URL បើជា relative path
+              const getFullImageUrl = (url) => {
+                if (!url) return '/images/placeholder-banner.jpg';
+                
+                // បើជា full URL រួចហើយ ត្រឡប់វាចេញ
+                if (url.startsWith('http://') || url.startsWith('https://')) {
+                  return url;
+                }
+                
+                // បើជា data URI
+                if (url.startsWith('data:')) {
+                  return url;
+                }
+                
+                // បើជា relative path បន្ថែម base URL
+                const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+                const cleanBase = baseUrl.replace(/\/$/, '');
+                const cleanPath = url.startsWith('/') ? url : `/${url}`;
+                
+                return `${cleanBase}${cleanPath}`;
+              };
+              
+              const finalImageUrl = getFullImageUrl(imageUrl);
               
               return (
                 <div
@@ -236,7 +248,7 @@ export default function HomePage() {
                   }`}
                 >
                   <img
-                    src={imageUrl}
+                    src={finalImageUrl}  // ✅ ប្រើ finalImageUrl ជំនួស imageUrl
                     alt={banner.title || banner.movie_title}
                     className="w-full h-full object-cover object-center"
                     loading={index === 0 ? 'eager' : 'lazy'}

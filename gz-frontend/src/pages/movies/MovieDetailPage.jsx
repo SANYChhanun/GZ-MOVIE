@@ -1,67 +1,40 @@
-// src/pages/movies/MovieDetailPage.jsx — Fixed Video Player
+// src/pages/movies/MovieDetailPage.jsx
 import { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import moviesApi from '../../api/moviesApi';
 import Header from '../../components/Header';
 import Footer from '../../components/Footer';
+import PurchaseModal from '../../components/movie/PurchaseModal';
 
 export default function MovieDetailPage() {
   const { id } = useParams();
   const { user, isVIP } = useAuth();
   const navigate = useNavigate();
 
-  // ============ STATE ============
   const [movie, setMovie] = useState(null);
-  const [episodes, setEpisodes] = useState([]);
-  const [relatedMovies, setRelatedMovies] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [showVideo, setShowVideo] = useState(false);
+  const [showPurchaseModal, setShowPurchaseModal] = useState(false);
 
-  // ============ FETCH MOVIE DATA ============
+  const isAdminOrStaff = 
+    user?.is_staff === true || 
+    user?.is_superuser === true || 
+    user?.role === 'ADMIN' ||
+    false;
+
   useEffect(() => {
     const fetchMovieDetail = async () => {
       setLoading(true);
       setError(null);
       
       try {
-        const movieRes = await moviesApi.getMovie(id);
-        const movieData = movieRes.data;
-        setMovie(movieData);
-
-        // Fetch episodes
-        try {
-          const episodesRes = await moviesApi.getEpisodes(id);
-          const eps = episodesRes.data?.results || episodesRes.data || [];
-          setEpisodes(eps);
-        } catch {
-          setEpisodes([]);
-        }
-
-        // Fetch related movies
-        if (movieData.genres?.length > 0) {
-          try {
-            const genreIds = movieData.genres.map(g => typeof g === 'object' ? g.id : g).join(',');
-            const relatedRes = await moviesApi.getMovies({ 
-              genres: genreIds, 
-              page_size: 6,
-              exclude: id 
-            });
-            const related = relatedRes.data?.results || relatedRes.data || [];
-            setRelatedMovies(related.filter(m => String(m.id) !== String(id)).slice(0, 6));
-          } catch {
-            setRelatedMovies([]);
-          }
-        }
-
+        const movieRes = await moviesApi.getMovieDetail(id);
+        setMovie(movieRes.data);
       } catch (err) {
         console.error('Failed to fetch movie detail:', err);
-        if (err.response?.status === 404) {
-          setError('រកមិនឃើញភាពយន្តនេះទេ។');
-        } else {
-          setError('មិនអាចទាញយកទិន្នន័យបានទេ។ សូមព្យាយាមម្តងទៀត។');
-        }
+        setError('មិនអាចទាញយកទិន្នន័យបានទេ។');
       } finally {
         setLoading(false);
       }
@@ -73,110 +46,125 @@ export default function MovieDetailPage() {
     }
   }, [id]);
 
-  // ============ HANDLERS ============
   const handleWatch = () => {
-    if (!user) {
-      navigate('/login');
-      return;
-    }
-    
-    if (movie.access_type === 'member' && !isVIP) {
-      navigate('/pricing');
-      return;
-    }
-    
-    setShowVideo(true);
-  };
-
-  const handleEpisodeClick = (episodeId) => {
-    if (!user) {
-      navigate('/login');
-      return;
-    }
-    navigate(`/watch/${id}?episode=${episodeId}`);
-  };
-
-  // ============ RENDER VIDEO PLAYER ============
-// src/pages/movies/MovieDetailPage.jsx
-
-const renderVideoPlayer = () => {
-  if (!showVideo) return null;
-  
-  // ✅ ប្រើ video_embed_url ជាអាទិភាព
-  const videoUrl = movie?.video_embed_url || 
-                   movie?.video_file || 
-                   movie?.bunny_video_id;
-  
-  console.log('🎬 Video URL:', videoUrl);
-  
-  if (!videoUrl) {
-    return (
-      <div className="bg-card rounded-xl p-8 text-center border border-white/5">
-        <i className="bi bi-exclamation-triangle text-4xl text-yellow-500 mb-3 block"></i>
-        <p className="text-gray-400">មិនមានវីដេអូសម្រាប់ភាពយន្តនេះទេ។</p>
-        <p className="text-gray-500 text-sm mt-2">
-          Access Type: {movie?.access_type}
-        </p>
-      </div>
-    );
+  if (!user) {
+    navigate('/login');
+    return;
   }
-
-  const isBunnyUrl = videoUrl.includes('mediadelivery.net') || 
-                     videoUrl.includes('b-cdn.net') ||
-                     videoUrl.includes('bunnycdn');
-
-  return (
-    <div className="bg-black rounded-xl overflow-hidden border border-white/10">
-      {isBunnyUrl ? (
-        <iframe
-          src={videoUrl}
-          className="w-full aspect-video"
-          allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
-          allowFullScreen
-          title={movie.title}
-          frameBorder="0"
-        />
-      ) : (
-        <video
-          controls
-          autoPlay
-          className="w-full aspect-video"
-          poster={movie.poster_url || movie.poster}
-        >
-          <source src={videoUrl} type="video/mp4" />
-          Your browser does not support the video tag.
-        </video>
-      )}
-    </div>
-  );
+  
+  if (isAdminOrStaff) {
+    setShowVideo(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  
+  // ✅ ពិនិត្យ can_watch ពី backend ជាមុនសិន មិនថា access_type អ្វី
+  if (movie.can_watch) {
+    setShowVideo(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  
+  if (movie.access_type === 'free') {
+    setShowVideo(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    return;
+  }
+  
+  if (movie.access_type === 'member') {
+    if (isVIP) {
+      setShowVideo(true);
+    } else {
+      navigate('/pricing');
+    }
+    return;
+  }
+  
+  if (movie.access_type === 'purchase') {
+    // ✅ ដល់ត្រង់នេះមានន័យថា can_watch === false → ត្រូវទិញមែន
+    setShowPurchaseModal(true);
+    return;
+  }
+  
+  setShowVideo(true);
+};
+const handlePurchaseSuccess = async () => {
+  setShowPurchaseModal(false);
+  try {
+    // ទាញយក movie detail ម្ដងទៀត ដើម្បីទទួល video_file ដែលឥឡូវនេះមានសិទ្ធិមើល
+    const movieRes = await moviesApi.getMovieDetail(id);
+    setMovie(movieRes.data);
+    setShowVideo(true);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  } catch (err) {
+    console.error('Failed to refresh movie after purchase:', err);
+  }
 };
 
-  // ============ LOADING STATE ============
+  const renderVideoPlayer = () => {
+    if (!showVideo) return null;
+    
+    const videoUrl = movie?.video_file || movie?.bunny_video_id;
+    
+    if (!videoUrl) {
+      return (
+        <div className="bg-[#1f1f1f] rounded-xl p-8 text-center border border-gray-800">
+          <i className="bi bi-exclamation-triangle text-4xl text-yellow-500 mb-3 block"></i>
+          <p className="text-gray-400">មិនមានវីដេអូសម្រាប់ភាពយន្តនេះទេ។</p>
+        </div>
+      );
+    }
+
+    const isBunnyUrl = videoUrl.includes('mediadelivery.net') || 
+                       videoUrl.includes('iframe') ||
+                       videoUrl.includes('b-cdn.net');
+
+    return (
+      <div className="bg-black rounded-xl overflow-hidden border border-gray-800">
+        {isBunnyUrl ? (
+          <iframe
+            src={videoUrl}
+            className="w-full aspect-video"
+            allow="autoplay; fullscreen; encrypted-media; picture-in-picture"
+            allowFullScreen
+            title={movie.title}
+            frameBorder="0"
+          />
+        ) : (
+          <video
+            controls
+            autoPlay
+            className="w-full aspect-video"
+            poster={movie.poster_url || movie.poster}
+          >
+            <source src={videoUrl} type="video/mp4" />
+          </video>
+        )}
+      </div>
+    );
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-darker font-khmer">
+      <div className="min-h-screen bg-[#141414] font-khmer">
         <Header />
-        <div className="pt-20">
-          <DetailSkeleton />
+        <div className="flex items-center justify-center h-64 pt-20">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-red-600"></div>
         </div>
       </div>
     );
   }
 
-  // ============ ERROR STATE ============
   if (error || !movie) {
     return (
-      <div className="min-h-screen bg-darker font-khmer">
+      <div className="min-h-screen bg-[#141414] font-khmer">
         <Header />
         <div className="pt-32 flex flex-col items-center justify-center px-4">
           <i className="bi bi-exclamation-triangle text-6xl text-yellow-500 mb-4"></i>
           <h2 className="text-white text-xl font-bold mb-2">រកមិនឃើញ</h2>
           <p className="text-gray-400 mb-6">{error || 'ភាពយន្តនេះមិនមានទេ។'}</p>
-          <Link 
-            to="/movies" 
-            className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-xl transition flex items-center gap-2"
-          >
-            <i className="bi bi-arrow-left"></i>
+          <Link to="/movies" className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-xl transition">
+            <i className="bi bi-arrow-left mr-2"></i>
             ត្រឡប់ទៅបណ្ណាល័យ
           </Link>
         </div>
@@ -184,44 +172,39 @@ const renderVideoPlayer = () => {
     );
   }
 
-  // ============ MAIN RENDER ============
-  const posterUrl = movie.poster || null;
+  const posterUrl = movie.poster_url || movie.poster || null;
+  const backdropUrl = movie.backdrop_url || movie.backdrop || null;
   const title = movie.title || 'Untitled';
   const rating = movie.rating ? Number(movie.rating).toFixed(1) : null;
   const year = movie.release_date ? movie.release_date.split('-')[0] : movie.year || '';
   const genres = movie.genres || [];
   const isFree = movie.access_type === 'free';
   const isMember = movie.access_type === 'member';
+  const isPurchase = movie.access_type === 'purchase';
+  const purchasePrice = Number(movie.purchase_price || 0);
 
   return (
-    <div className="min-h-screen bg-darker font-khmer">
+    <div className="min-h-screen bg-[#141414] font-khmer">
       <Header />
 
-      {/* ============ VIDEO PLAYER ============ */}
+      {/* VIDEO PLAYER */}
       {showVideo && (
         <div className="container mx-auto px-4 pt-24 pb-6">
           {renderVideoPlayer()}
         </div>
       )}
 
-      {/* ============ HERO SECTION ============ */}
-      <div className="relative" style={{ marginTop: showVideo ? '0' : '0' }}>
-        {/* Backdrop Image */}
+      {/* HERO SECTION */}
+      <div className="relative">
         <div className="absolute inset-0 h-[70vh] overflow-hidden">
-          {movie.backdrop ? (
-            <img
-              src={movie.backdrop}
-              alt={title}
-              className="w-full h-full object-cover object-center"
-            />
+          {backdropUrl ? (
+            <img src={backdropUrl} alt={title} className="w-full h-full object-cover" />
           ) : (
-            <div className="w-full h-full bg-gradient-to-br from-gray-900 via-gray-800 to-darker" />
+            <div className="w-full h-full bg-gradient-to-br from-gray-900 via-gray-800 to-[#141414]" />
           )}
-          <div className="absolute inset-0 bg-gradient-to-t from-darker via-darker/60 to-transparent" />
-          <div className="absolute inset-0 bg-gradient-to-r from-darker/80 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-[#141414] via-[#141414]/60 to-transparent" />
         </div>
 
-        {/* Content */}
         <div className="relative pt-24 pb-12">
           <div className="container mx-auto px-4">
             <div className="flex flex-col md:flex-row gap-8 items-start">
@@ -229,11 +212,7 @@ const renderVideoPlayer = () => {
               <div className="w-48 md:w-56 flex-shrink-0 mx-auto md:mx-0">
                 <div className="aspect-[2/3] rounded-xl overflow-hidden shadow-2xl">
                   {posterUrl ? (
-                    <img
-                      src={posterUrl}
-                      alt={title}
-                      className="w-full h-full object-cover"
-                    />
+                    <img src={posterUrl} alt={title} className="w-full h-full object-cover" />
                   ) : (
                     <div className="w-full h-full bg-gray-800 flex items-center justify-center">
                       <i className="bi bi-film text-5xl text-gray-700"></i>
@@ -244,47 +223,27 @@ const renderVideoPlayer = () => {
 
               {/* Info */}
               <div className="flex-1 text-center md:text-left">
-                <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-white mb-2">
-                  {title}
-                </h1>
+                <h1 className="text-3xl md:text-4xl lg:text-5xl font-black text-white mb-2">{title}</h1>
 
-                {/* Meta Row */}
                 <div className="flex items-center justify-center md:justify-start gap-3 mb-3 flex-wrap">
                   {rating && (
-                    <>
-                      <span className="text-yellow-400 font-bold text-lg flex items-center gap-1">
-                        <i className="bi bi-star-fill"></i>
-                        {rating}
-                      </span>
-                      <span className="text-gray-500">•</span>
-                    </>
+                    <span className="text-yellow-400 font-bold flex items-center gap-1">
+                      <i className="bi bi-star-fill"></i>{rating}
+                    </span>
                   )}
                   <span className="text-gray-300">{year}</span>
-                  {movie.duration && (
-                    <>
-                      <span className="text-gray-500">•</span>
-                      <span className="text-gray-300">{movie.duration} នាទី</span>
-                    </>
-                  )}
-                  <span className="text-gray-500">•</span>
-                  <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
-                    isFree ? 'bg-green-500' : 'bg-yellow-500 text-black'
-                  }`}>
-                    {isFree ? 'ឥតគិតថ្លៃ' : 'VIP'}
-                  </span>
+                  {movie.duration && <span className="text-gray-300">{movie.duration} នាទី</span>}
+                  {isFree && <span className="bg-green-500 text-white text-xs px-2.5 py-0.5 rounded-full">ឥតគិតថ្លៃ</span>}
+                  {isMember && <span className="bg-yellow-500 text-black text-xs px-2.5 py-0.5 rounded-full">VIP</span>}
+                  {isPurchase && <span className="bg-blue-500 text-white text-xs px-2.5 py-0.5 rounded-full">ទិញមើល</span>}
                 </div>
 
-                {/* Genres */}
                 {genres.length > 0 && (
                   <div className="flex justify-center md:justify-start gap-2 mb-6 flex-wrap">
                     {genres.map((genre, i) => (
-                      <Link
-                        key={i}
-                        to={`/movies?genre=${typeof genre === 'string' ? genre : genre.id || genre.name}`}
-                        className="bg-white/10 text-gray-300 px-3 py-1 rounded-full text-xs hover:bg-red-600 hover:text-white transition-all border border-white/5"
-                      >
+                      <span key={i} className="bg-white/10 text-gray-300 px-3 py-1 rounded-full text-xs">
                         {typeof genre === 'string' ? genre : genre.name}
-                      </Link>
+                      </span>
                     ))}
                   </div>
                 )}
@@ -294,207 +253,80 @@ const renderVideoPlayer = () => {
                   {!showVideo ? (
                     <button
                       onClick={handleWatch}
-                      className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-8 rounded-xl flex items-center gap-2 transition-all hover:scale-105 shadow-xl"
+                      className="bg-red-600 hover:bg-red-700 text-white font-bold py-3 px-8 rounded-xl flex items-center gap-2 transition-all"
                     >
                       <i className="bi bi-play-fill text-xl"></i>
-                      {user ? 'មើលឥឡូវនេះ' : 'ចូលគណនីដើម្បីមើល'}
+                      {!user ? 'ចូលគណនីដើម្បីមើល' :
+                       isAdminOrStaff ? 'មើលឥឡូវនេះ' :
+                       isPurchase ? `ទិញនិងមើល ($${purchasePrice.toFixed(2)})` :
+                       isMember && !isVIP ? 'ជាវ VIP ដើម្បីមើល' :
+                       'មើលឥឡូវនេះ'}
                     </button>
                   ) : (
-                    <button
-                      onClick={() => setShowVideo(false)}
-                      className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-8 rounded-xl flex items-center gap-2 transition-all"
-                    >
-                      <i className="bi bi-x-lg"></i>
-                      បិទវីដេអូ
+                    <button onClick={() => setShowVideo(false)} className="bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-8 rounded-xl">
+                      <i className="bi bi-x-lg mr-2"></i>បិទវីដេអូ
                     </button>
                   )}
-                  
-                  {movie.trailer_url && (
-                    <a
-                      href={movie.trailer_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="bg-white/10 hover:bg-white/20 text-white font-bold py-3 px-6 rounded-xl flex items-center gap-2 transition-all border border-white/10"
-                    >
-                      <i className="bi bi-play-btn"></i>
-                      ឈុតខ្លីៗ
-                    </a>
-                  )}
                 </div>
-
-                {/* Access Info */}
-                {!user && (
-                  <p className="text-gray-400 text-sm mt-4">
-                    <i className="bi bi-info-circle mr-1"></i>
-                    សូម{' '}
-                    <Link to="/login" className="text-red-400 hover:text-red-300">
-                      ចូលគណនី
-                    </Link>
-                    {' '}ដើម្បីមើលវីដេអូ
-                  </p>
-                )}
-                {user && !isFree && !isVIP && (
-                  <p className="text-yellow-400 text-sm mt-4">
-                    <i className="bi bi-star mr-1"></i>
-                    ភាពយន្តនេះត្រូវការ VIP ដើម្បីមើល។
-                    <Link to="/pricing" className="text-red-400 hover:text-red-300 ml-1">
-                      ចុះឈ្មោះ VIP
-                    </Link>
-                  </p>
-                )}
               </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ============ MAIN CONTENT ============ */}
+      {/* MAIN CONTENT */}
       <main className="container mx-auto px-4 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          {/* Left Column - Main Info */}
-          <div className="lg:col-span-2 space-y-8">
-            {/* Description */}
+          <div className="lg:col-span-2">
             {movie.description && (
               <section>
-                <h2 className="text-xl font-bold text-white mb-3 flex items-center gap-2">
-                  <i className="bi bi-file-text text-red-500"></i>
+                <h2 className="text-xl font-bold text-white mb-3">
+                  <i className="bi bi-file-text text-red-500 mr-2"></i>
                   អំពីភាពយន្ត
                 </h2>
                 <p className="text-gray-300 leading-relaxed">{movie.description}</p>
               </section>
             )}
-
-            {/* Episodes */}
-            {episodes.length > 0 && (
-              <section>
-                <h2 className="text-xl font-bold text-white mb-4 flex items-center gap-2">
-                  <i className="bi bi-collection-play text-red-500"></i>
-                  ភាគទាំងអស់ ({episodes.length})
-                </h2>
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                  {episodes.map((ep) => (
-                    <button
-                      key={ep.id}
-                      onClick={() => handleEpisodeClick(ep.id)}
-                      className="bg-card hover:bg-gray-700 rounded-xl p-4 text-left transition-all hover:scale-105 border border-white/5"
-                    >
-                      {ep.thumbnail ? (
-                        <img src={ep.thumbnail} alt={ep.title} className="w-full aspect-video object-cover rounded-lg mb-3" />
-                      ) : (
-                        <div className="w-full aspect-video bg-gray-700 rounded-lg mb-3 flex items-center justify-center">
-                          <i className="bi bi-play-circle text-2xl text-gray-500"></i>
-                        </div>
-                      )}
-                      <p className="text-white font-bold text-sm">ភាគ {ep.episode_number}</p>
-                      {ep.title && <p className="text-gray-400 text-xs mt-1 truncate">{ep.title}</p>}
-                    </button>
-                  ))}
-                </div>
-              </section>
-            )}
           </div>
 
-          {/* Right Column - Sidebar */}
-          <div className="space-y-6">
-            {/* Movie Info Card */}
-            <div className="bg-card rounded-xl p-5 border border-white/5">
-              <h3 className="text-white font-bold mb-4">ព័ត៌មាន</h3>
+          <div>
+            <div className="bg-[#1f1f1f] rounded-xl p-5 border border-gray-800">
+              <h3 className="text-white font-bold mb-4">
+                <i className="bi bi-info-circle text-red-500 mr-2"></i>
+                ព័ត៌មាន
+              </h3>
               <div className="space-y-3 text-sm">
-                <InfoRow label="ប្រភេទ" value={isFree ? 'ឥតគិតថ្លៃ' : 'VIP'} />
+                <InfoRow label="ប្រភេទ" value={isFree ? 'ឥតគិតថ្លៃ' : isMember ? 'VIP' : 'ទិញមើល'} />
                 {year && <InfoRow label="ឆ្នាំចេញ" value={year} />}
                 {movie.duration && <InfoRow label="រយៈពេល" value={`${movie.duration} នាទី`} />}
                 {movie.country && <InfoRow label="ប្រទេស" value={movie.country} />}
                 {movie.language && <InfoRow label="ភាសា" value={movie.language} />}
-                {rating && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">ពិន្ទុ</span>
-                    <span className="text-yellow-400 font-bold flex items-center gap-1">
-                      <i className="bi bi-star-fill text-xs"></i>
-                      {rating}/10
-                    </span>
-                  </div>
-                )}
-                {movie.view_count > 0 && (
-                  <InfoRow label="ចំនួនមើល" value={movie.view_count.toLocaleString()} />
-                )}
+                {isPurchase && <InfoRow label="តម្លៃ" value={`$${purchasePrice.toFixed(2)}`} />}
               </div>
             </div>
-
-            {/* Related Movies */}
-            {relatedMovies.length > 0 && (
-              <div>
-                <h3 className="text-white font-bold mb-4 flex items-center gap-2">
-                  <i className="bi bi-grid text-red-500"></i>
-                  រឿងពាក់ព័ន្ធ
-                </h3>
-                <div className="grid grid-cols-2 gap-3">
-                  {relatedMovies.slice(0, 4).map((m) => (
-                    <Link
-                      key={m.id}
-                      to={`/movies/${m.id}`}
-                      className="bg-card rounded-lg overflow-hidden hover:scale-105 transition-all border border-white/5"
-                    >
-                      <div className="aspect-[2/3] bg-gray-800">
-                        {m.poster ? (
-                          <img src={m.poster} alt={m.title} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center">
-                            <i className="bi bi-film text-2xl text-gray-600"></i>
-                          </div>
-                        )}
-                      </div>
-                      <div className="p-2">
-                        <p className="text-white text-xs font-bold truncate">{m.title}</p>
-                        {m.rating && (
-                          <p className="text-yellow-400 text-xs flex items-center gap-1 mt-0.5">
-                            <i className="bi bi-star-fill text-[10px]"></i>
-                            {Number(m.rating).toFixed(1)}
-                          </p>
-                        )}
-                      </div>
-                    </Link>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
       </main>
+
+      {/* Purchase Modal */}
+      {showPurchaseModal && movie && (
+        <PurchaseModal
+          movie={movie}
+          onClose={() => setShowPurchaseModal(false)}
+          onSuccess={handlePurchaseSuccess}
+        />
+      )}
 
       <Footer />
     </div>
   );
 }
 
-// ============ HELPER COMPONENTS ============
 function InfoRow({ label, value }) {
   return (
     <div className="flex justify-between">
       <span className="text-gray-400">{label}</span>
       <span className="text-white">{value}</span>
-    </div>
-  );
-}
-
-function DetailSkeleton() {
-  return (
-    <div className="animate-pulse">
-      <div className="h-[70vh] bg-gray-800" />
-      <div className="container mx-auto px-4 -mt-32 relative">
-        <div className="flex flex-col md:flex-row gap-8">
-          <div className="w-48 md:w-56 aspect-[2/3] bg-gray-700 rounded-xl mx-auto md:mx-0" />
-          <div className="flex-1 space-y-4">
-            <div className="h-10 w-64 bg-gray-700 rounded" />
-            <div className="h-5 w-48 bg-gray-700 rounded" />
-            <div className="h-5 w-32 bg-gray-700 rounded" />
-            <div className="flex gap-2">
-              <div className="h-8 w-20 bg-gray-700 rounded-full" />
-              <div className="h-8 w-20 bg-gray-700 rounded-full" />
-            </div>
-            <div className="h-12 w-40 bg-gray-700 rounded-xl" />
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

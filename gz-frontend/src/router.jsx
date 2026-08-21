@@ -1,17 +1,19 @@
-﻿// src/router.jsx — Fixed Version (No User Pages)
+// src/router.jsx — Fixed Version with Khmer Text
 import { createBrowserRouter, Outlet, Link, useLocation } from 'react-router-dom';
 import { useState } from 'react';
 
 // ============ PUBLIC PAGES ============
 import HomePage from './pages/HomePage';
-import LoginPage from './pages/LoginPage';
-import SignUpPage from './pages/SignUpPage';
+import LoginPage from './features/auth/pages/LoginPage';
+import SignUpPage from './features/auth/pages/SignUpPage';
 import PricingPage from './pages/PricingPage';
 
 // ============ MOVIE PAGES ============
 import MovieLibraryPage from './pages/movies/MovieLibraryPage';
 import MovieDetailPage from './pages/movies/MovieDetailPage';
 import VideoPlayerPage from './pages/watch/VideoPlayerPage';
+
+import WalletPage from './pages/WalletPage';
 
 // ============ PROTECTED ROUTES ============
 import PrivateRoute, { AdminRoute } from './routes/PrivateRoute';
@@ -45,10 +47,10 @@ const AdminSidebar = () => {
     { path: '/admin/users', icon: 'bi-people', label: 'អ្នកប្រើប្រាស់' },
     { path: '/admin/banners', icon: 'bi-image', label: 'Banner' },
     { path: '/admin/categories', icon: 'bi-grid', label: 'ប្រភេទ' },
-    { path: '/admin/membership', icon: 'bi-star', label: 'VIP' },
+    { path: '/admin/membership', icon: 'bi-star', label: 'សមាជិក VIP' },
     { path: '/admin/payments', icon: 'bi-wallet2', label: 'ការទូទាត់' },
     { path: '/admin/wallet', icon: 'bi-cash', label: 'Wallet' },
-    { path: '/admin/notifications', icon: 'bi-bell', label: 'ជូនដំណឹង' },
+    { path: '/admin/notifications', icon: 'bi-bell', label: 'ការជូនដំណឹង' },
     { path: '/admin/support', icon: 'bi-headset', label: 'ជំនួយ' },
     { path: '/admin/reports', icon: 'bi-file-earmark-bar-graph', label: 'របាយការណ៍' },
   ];
@@ -98,10 +100,10 @@ const AdminSidebar = () => {
         <a
           href="/"
           className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-slate-500 hover:text-white hover:bg-slate-800 transition-all"
-          title={collapsed ? 'ត្រឡប់ទៅគេហទំព័រ' : ''}
+          title={collapsed ? 'ត្រឡប់ទៅទំព័រដើម' : ''}
         >
           <i className="bi bi-arrow-left text-lg"></i>
-          {!collapsed && <span>ត្រឡប់ទៅគេហទំព័រ</span>}
+          {!collapsed && <span>ត្រឡប់ទៅទំព័រដើម</span>}
         </a>
       </nav>
     </aside>
@@ -136,7 +138,14 @@ export const router = createBrowserRouter([
       </PrivateRoute>
     ),
   },
-  
+  {
+    path: '/wallet',
+    element: (
+      <PrivateRoute>
+        <WalletPage />
+      </PrivateRoute>
+    ),
+  },
   // ADMIN
   {
     path: '/admin',
@@ -167,7 +176,7 @@ export const router = createBrowserRouter([
       <div className="min-h-screen bg-darker flex items-center justify-center">
         <div className="text-center">
           <h1 className="text-6xl font-black text-white mb-4">404</h1>
-          <p className="text-gray-400 text-lg mb-6">ទំព័រដែលអ្នកកំពុងស្វែងរកមិនមានទេ។</p>
+          <p className="text-gray-400 text-lg mb-6">រកមិនឃើញទំព័រដែលអ្នកកំពុងស្វែងរកទេ</p>
           <Link to="/" className="bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-xl inline-flex items-center gap-2 transition">
             <i className="bi bi-house-door"></i>
             ត្រឡប់ទៅទំព័រដើម

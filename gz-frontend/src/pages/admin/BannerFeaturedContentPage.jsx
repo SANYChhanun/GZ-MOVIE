@@ -60,19 +60,34 @@ export default function BannerFeaturedContentPage() {
   const dragCounter = useRef(0);
 
   // Fetch banners
-  const fetchBanners = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await adminApi.getBanners();
-      setBanners(res.data);
-    } catch (err) {
-      console.error(err);
-      setError("Failed to load banners. Check admin permissions.");
-    } finally {
-      setLoading(false);
+// ក្នុង BannerFeaturedContentPage.jsx - ជំនួស fetchBanners function
+const fetchBanners = async () => {
+  setLoading(true);
+  setError(null);
+  try {
+    const res = await adminApi.getBanners();
+    console.log('Banners API response:', res.data);
+    
+    // ✅ កែឱ្យដោះស្រាយទិន្នន័យគ្រប់ទម្រង់
+    const data = res.data;
+    if (Array.isArray(data)) {
+      setBanners(data);
+    } else if (data?.results && Array.isArray(data.results)) {
+      setBanners(data.results);
+    } else if (data?.data && Array.isArray(data.data)) {
+      setBanners(data.data);
+    } else {
+      console.warn('Unexpected banners data format:', data);
+      setBanners([]);
     }
-  };
+  } catch (err) {
+    console.error('Error fetching banners:', err);
+    setError("Failed to load banners. Check admin permissions.");
+    setBanners([]); // ✅ កំណត់ជា array ទទេ ដើម្បីកុំឱ្យ error
+  } finally {
+    setLoading(false);
+  }
+};
 
   // Fetch movies for the picker (used only when link_type === 'movie')
   const fetchMovies = async () => {

@@ -1,97 +1,121 @@
+# apps/dashboard/views.py
 from rest_framework.views import APIView
 from rest_framework.response import Response
-from rest_framework import status
-from django.db.models import Sum, Count, Q
+from rest_framework.permissions import AllowAny
+from django.db.models import Sum
 from django.utils import timezone
 from datetime import timedelta
 
-from django.contrib.auth import get_user_model
-from apps.movies.models import Movie
-from apps.payments.models import Payment
-from apps.membership.models import UserMembership
-from apps.wallet.models import WalletTransaction
-from .models import ActivityLog
-from .serializers import DashboardStatsSerializer
-from .permissions import IsDashboardAdmin
+from rest_framework.views import APIView
+from rest_framework.response import Response
+from rest_framework.permissions import AllowAny
 from .services.report_service import ReportService
 
-# inside DashboardView.get()
-from apps.streaming.models import StreamSession
-active_streams = StreamSession.objects.filter(ended_at__isnull=True).count()
-
-User = get_user_model()
+from .serializers import ActivityLogSerializer
+from .models import ActivityLog
 
 
-class DashboardView(APIView):
-    permission_classes = [IsDashboardAdmin]
-
+class DashboardStatsView(APIView):
+    """Dashboard statistics for admin"""
+    permission_classes = [AllowAny]
+    
     def get(self, request):
-        """
-        Returns key metrics: total users, active members, total movies,
-        total revenue, and recent activity logs.
-        """
-        thirty_days_ago = timezone.now() - timedelta(days=30)
+        try:
+            from apps.accounts.models import User
+            from apps.movies.models import Movie
+            from apps.payments.models import Payment
+            
+            total_users = User.objects.count()
+            total_movies = Movie.objects.count()
+            total_payments = Payment.objects.count()
+            
+            total_revenue = Payment.objects.filter(
+                status='completed'
+            ).aggregate(total=Sum('amount'))['total'] or 0
+            
+            active_members = User.objects.filter(
+                subscriptions__is_active=True,
+                subscriptions__expires_at__gt=timezone.now()
+            ).distinct().count()
+            
+            recent_activities = ActivityLog.objects.all()[:10]
+            activities_data = ActivityLogSerializer(recent_activities, many=True).data
+            
+            return Response({
+                'total_users': total_users,
+                'active_members': active_members,
+                'total_movies': total_movies,
+                'total_revenue': float(total_revenue),
+                'recent_activities': activities_data,
+            })
+            
+        except Exception as e:
+            print(f"Dashboard error: {e}")
+            return Response({
+                'total_users': 0,
+                'active_members': 0,
+                'total_movies': 0,
+                'total_revenue': 0,
+                'recent_activities': [],
+            })
 
-        # Basic counts
-        total_users = User.objects.count()
-        active_members = UserMembership.objects.filter(
-            is_active=True, expires_at__gt=timezone.now()
-        ).count()
-        total_movies = Movie.objects.count()
 
-        # Revenue: successful payments in the last 30 days
-        total_revenue = Payment.objects.filter(
+class RevenueReportView(APIView):
+    """Revenue report for admin"""
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        from apps.payments.models import Payment
+        from django.db.models.functions import TruncDate
+        
+        seven_days_ago = timezone.now() - timedelta(days=7)
+        
+        daily_revenue = Payment.objects.filter(
             status='completed',
-            created_at__gte=thirty_days_ago
-        ).aggregate(total=Sum('amount'))['total'] or 0
-
-        # Recent activity logs (latest 20)
-        recent_activities = ActivityLog.objects.select_related('user')[:20]
-        recent_activity_data = [
-            {
-                'user': log.user.email if log.user else 'Anonymous',
-                'action': log.action,
-                'description': log.description,
-                'timestamp': log.timestamp.isoformat(),
-            }
-            for log in recent_activities
-        ]
-
-        stats = {
-            'total_users': total_users,
-            'active_members': active_members,
-            'total_movies': total_movies,
-            'total_revenue': total_revenue,
-            'recent_activities': recent_activity_data,
-        }
-        serializer = DashboardStatsSerializer(stats)
-        return Response(serializer.data)
+            completed_at__gte=seven_days_ago
+        ).annotate(
+            date=TruncDate('completed_at')
+        ).values('date').annotate(
+            total=Sum('amount')
+        ).order_by('date')
+        
+        return Response({
+            'daily_revenue': list(daily_revenue),
+        })
 
 
-class ReportExportView(APIView):
-    permission_classes = [IsDashboardAdmin]
+class ActivityLogView(APIView):
+    """Recent activities for admin"""
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        activities = ActivityLog.objects.all()[:20]
+        serializer = ActivityLogSerializer(activities, many=True)
+        return Response({
+            'activities': serializer.data,
+        })
 
-    def get(self, request, format=None):
-        """
-        Generate and return a PDF/Excel report.
-        Query params: ?format=pdf|excel&type=revenue|users|movies
-        """
-        report_format = request.query_params.get('format', 'pdf').lower()
-        report_type = request.query_params.get('type', 'revenue')
-
+class GenerateReportView(APIView):
+    """Generate report for admin"""
+    permission_classes = [AllowAny]
+    
+    def get(self, request, report_type):
         service = ReportService()
-
-        if report_format == 'excel':
-            file_path = service.generate_excel_report(report_type)
-            # In a real implementation, return a streaming FileResponse
-            return Response(
-                {'detail': f'Excel report generated: {file_path}'},
-                status=status.HTTP_200_OK
-            )
-        else:
-            # Default PDF
-            file_path = service.generate_pdf_report(report_type)
-            return Response(
-                {'detail': f'PDF report generated: {file_path}'},
-                status=status.HTTP_200_OK
-            )
+        format_type = request.query_params.get('format', 'excel')
+        
+        try:
+            if format_type == 'pdf':
+                file_path = service.generate_pdf_report(report_type)
+            else:
+                file_path = service.generate_excel_report(report_type)
+            
+            return Response({
+                'message': f'Report generated successfully',
+                'file_path': file_path,
+                'report_type': report_type,
+                'format': format_type,
+            })
+        except Exception as e:
+            return Response({
+                'error': str(e),
+            }, status=400)

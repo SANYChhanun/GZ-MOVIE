@@ -1,9 +1,15 @@
+# apps/purchases/urls.py
 from django.urls import path
-from . import views
+from .views import (
+    PurchaseCreateView,
+    PurchaseListView,
+    AccessCheckView,
+    PPVStatsView,
+)
 
 urlpatterns = [
-    path('', views.PurchaseListView.as_view(), name='purchase-list'),
-    path('create/', views.PurchaseCreateView.as_view(), name='purchase-create'),
-    path('<int:pk>/', views.PurchaseDetailView.as_view(), name='purchase-detail'),
-    path('check/', views.AccessCheckView.as_view(), name='purchase-check'),
+    path('create/', PurchaseCreateView.as_view(), name='purchase-create'),
+    path('my-purchases/', PurchaseListView.as_view(), name='purchase-list'),
+    path('check/', AccessCheckView.as_view(), name='purchase-check'),
+    path('stats/', PPVStatsView.as_view(), name='ppv-stats'),
 ]

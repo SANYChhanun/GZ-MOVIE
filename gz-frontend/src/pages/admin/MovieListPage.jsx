@@ -6,8 +6,12 @@ import Badge, { accessTone, statusTone } from "../../components/common/Badge";
 import IconBtn from "../../components/common/IconBtn";
 import Table from "../../components/common/Table";
 import adminApi from "../../api/adminApi";
+import EpisodeManager from "../../features/admin/EpisodeManager";
 import AddMovieDrawer from "../../features/admin/AddMovieDrawer";
 import MovieDetailDrawer from "../../features/admin/MovieDetailDrawer";
+
+
+
 
 /* ============================================================
    Shared helpers
@@ -59,16 +63,17 @@ const hashString = (str) => {
   return Math.abs(hash);
 };
 
-const paletteFor = (name) => CATEGORY_PALETTE[hashString(name) % CATEGORY_PALETTE.length];
+  const paletteFor = (name) => CATEGORY_PALETTE[hashString(name) % CATEGORY_PALETTE.length];
 
-function CategoryBadges({ categories, max = 2 }) {
-  const names = Array.isArray(categories)
-    ? categories.map((c) => (c && typeof c === "object" ? c.name : c)).filter(Boolean)
-    : [];
+  // ✅ tone="category" ប្រើពណ៌ hash-based ចម្រុះ, tone="genre" ប្រើពណ៌ស្ងប់តែមួយ ដើម្បីមិនច្រឡំគ្នា
+  function CategoryBadges({ categories, max = 2, tone = "category" }) {
+    const names = Array.isArray(categories)
+      ? categories.map((c) => (c && typeof c === "object" ? c.name : c)).filter(Boolean)
+      : [];
 
-  if (names.length === 0) {
-    return <span className="text-slate-600 text-xs">—</span>;
-  }
+    if (names.length === 0) {
+      return <span className="text-slate-600 text-xs">—</span>;
+    }
 
   const shown = names.slice(0, max);
   const remaining = names.length - shown.length;
@@ -76,12 +81,16 @@ function CategoryBadges({ categories, max = 2 }) {
   return (
     <div className="flex flex-wrap gap-1">
       {shown.map((name) => (
-        <span
-          key={name}
-          className={`text-[11px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${paletteFor(name)}`}
-        >
-          {name}
-        </span>
+      <span
+        key={name}
+        className={`text-[11px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${
+          tone === "genre"
+            ? "bg-slate-700/40 text-slate-300 border-slate-600"
+            : paletteFor(name)
+        }`}
+      >
+        {name}
+      </span>
       ))}
       {remaining > 0 && (
         <span className="text-[11px] px-2 py-0.5 rounded-full border border-slate-700 text-slate-400">
@@ -122,6 +131,9 @@ export default function MovieListPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+
+  const [showEpisodes, setShowEpisodes] = useState(false);   
+  const [managingMovie, setManagingMovie] = useState(null); 
 
   const [query, setQuery] = useState("");
   const [accessFilter, setAccessFilter] = useState("");
@@ -313,7 +325,7 @@ export default function MovieListPage() {
 
       {/* Table */}
       <Table
-        headers={["Title", "Category", "Access", "Status", "Year", "Views", "Rating", ""]}
+        headers={["Title", "Category", "Genre", "Access", "Status", "Year", "Views", "Rating", ""]}
         empty="No movies match your criteria."
         rows={movies.map((m) => [
           <div key={m.id} className="flex items-center gap-3">
@@ -321,6 +333,7 @@ export default function MovieListPage() {
             <span className="font-medium text-slate-100">{m.title}</span>
           </div>,
           <CategoryBadges categories={m.categories} key={`cat-${m.id}`} />,
+            <CategoryBadges categories={m.genres} key={`gen-${m.id}`} />, 
           <Badge tone={accessTone[m.access_type] || accessTone.free} key={`acc-${m.id}`}>
             {accessDisplay(m.access_type)}
           </Badge>,
@@ -351,6 +364,15 @@ export default function MovieListPage() {
             >
               <i className="bi bi-eye-fill" style={{ fontSize: 14 }} />
             </button>
+            {m.content_type === 'series' && (
+              <button
+                onClick={() => handleManageEpisodes(m)}
+                title="គ្រប់គ្រងភាគ"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-sky-400 hover:bg-slate-800 transition-colors"
+              >
+                <Clapperboard size={14} />
+              </button>
+            )}
             <IconBtn icon={Pencil} title="Edit" onClick={() => handleEditClick(m)} />
             <IconBtn icon={Trash2} tone="crimson" title="Delete" onClick={() => handleDelete(m.id)} />
           </div>,
@@ -400,6 +422,12 @@ export default function MovieListPage() {
           onDelete={handleDetailDelete}
         />
       )}
+      {showEpisodes && managingMovie && (
+      <EpisodeManager
+        movie={managingMovie}
+        onClose={handleEpisodesClose}
+      />
+    )}
     </>
   );
 }

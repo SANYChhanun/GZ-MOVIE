@@ -5,7 +5,8 @@ from rest_framework.decorators import action
 from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django_filters.rest_framework import DjangoFilterBackend
-from .models import Movie, Episode, HeroBanner, SeriesType
+
+from .models import Movie, Episode, HeroBanner
 from .serializers import (
     MovieListSerializer,
     MovieDetailSerializer,
@@ -14,127 +15,170 @@ from .serializers import (
     EpisodeSerializer,
     HeroBannerSerializer,
     HeroBannerCreateUpdateSerializer,
-    SeriesTypeSerializer,
 )
-# Genre/Category moved to apps.taxonomy -- the public genres/categories
-# actions on MovieViewSet below (used by dropdown filters, HomePage.jsx,
-# etc.) now read from there instead of apps.movies. Admin CRUD for these
-# also moved -- see apps/taxonomy/views.py + apps/taxonomy/urls.py,
-# included directly in the project's root urls.py.
 from apps.taxonomy.models import Genre, Category
 from apps.taxonomy.serializers import GenreSerializer, CategorySerializer
 from .filters import MovieFilter
-from .permissions import MovieAccessPermission, IsAdminOrReadOnly
+from .permissions import IsAdminOrReadOnly
 
 
 # ============================================================
-# PUBLIC ENDPOINTS — AllowAny for list/retrieve
+# PUBLIC MOVIE ENDPOINTS
 # ============================================================
 
 class MovieViewSet(viewsets.ReadOnlyModelViewSet):
     """
     Public movie endpoints.
-    - GET /api/movies/              → List all movies (with filters, search, pagination)
-    - GET /api/movies/{id}/         → Movie detail
-    - GET /api/movies/featured/     → Featured movies
-    - GET /api/movies/new_releases/ → New releases
-    - GET /api/movies/free/         → Free movies
-    - GET /api/movies/genres/       → All genres
-    - GET /api/movies/categories/   → All categories
+    
+    Endpoints:
+    - GET /api/movies/                  → List all movies
+    - GET /api/movies/{id}/             → Movie detail
+    - GET /api/movies/featured/         → Featured movies
+    - GET /api/movies/new-releases/     → New releases
+    - GET /api/movies/free/             → Free movies
+    - GET /api/movies/popular/          → Popular movies
+    - GET /api/movies/genres/           → All genres
+    - GET /api/movies/categories/       → All categories
+    - GET /api/movies/related/?movie_id={id} → Related movies
     """
     queryset = Movie.objects.filter(is_active=True).prefetch_related(
-        'genres', 'categories', 'cast', 'crew', 'episodes'
-    ).select_related()
+        'genres', 'categories', 'countries', 'series_types', 'episodes'
+    )
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_class = MovieFilter
-    search_fields = ['title', 'description', 'short_description', 'genres__name', 'cast__name', 'crew__name']
+    search_fields = ['title', 'description', 'short_description', 'genres__name']
     ordering_fields = ['release_date', 'rating', 'view_count', 'created_at', 'title']
     ordering = ['-release_date']
+    permission_classes = [AllowAny]
 
     def get_serializer_class(self):
+        """ប្រើ serializer ផ្សេងៗគ្នាតាម action"""
         if self.action == 'list':
             return MovieListSerializer
         return MovieDetailSerializer
 
-    def get_permissions(self):
-        """
-        Public can list/retrieve movies, plus all the read-only custom
-        actions below (genres, categories, featured, new_releases, free,
-        popular) -- these back public homepage/browse UI and must not
-        require admin auth. Only list/retrieve were covered here before,
-        so every custom @action fell through to IsAdminUser() and
-        returned 403 for ordinary logged-out/non-admin visitors (e.g.
-        HomePage.jsx calling GET /api/movies/genres/).
-        """
-        if self.action in [
-            'list', 'retrieve',
-            'featured', 'new_releases', 'free', 'popular',
-            'genres', 'categories',
-        ]:
-            return [AllowAny()]
-        return [IsAdminUser()]
-
     def get_serializer_context(self):
-        """
-        Pass request to serializer so _user_can_watch() can access
-        the current user.
-        """
+        """Pass request to serializer for user permission checks"""
         context = super().get_serializer_context()
         context['request'] = self.request
         return context
 
+    def retrieve(self, request, *args, **kwargs):
+        """បង្កើន view_count នៅពេលមើលលម្អិត"""
+        instance = self.get_object()
+        instance.view_count += 1
+        instance.save(update_fields=['view_count'])
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
     # ========== CUSTOM ACTIONS ==========
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], url_path='featured')
     def featured(self, request):
         """Return featured movies for homepage hero section."""
-        featured = Movie.objects.filter(is_featured=True, is_active=True)[:10]
-        serializer = MovieListSerializer(featured, many=True, context={'request': request})
+        featured = Movie.objects.filter(
+            is_featured=True, 
+            is_active=True
+        ).prefetch_related('genres', 'categories')[:10]
+        serializer = MovieListSerializer(
+            featured, 
+            many=True, 
+            context={'request': request}
+        )
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], url_path='new-releases')
     def new_releases(self, request):
         """Return new release movies."""
-        new_releases = Movie.objects.filter(is_new_release=True, is_active=True).order_by('-release_date')[:20]
-        serializer = MovieListSerializer(new_releases, many=True, context={'request': request})
+        new_releases = Movie.objects.filter(
+            is_new_release=True, 
+            is_active=True
+        ).order_by('-release_date')[:20]
+        serializer = MovieListSerializer(
+            new_releases, 
+            many=True, 
+            context={'request': request}
+        )
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], url_path='free')
     def free(self, request):
         """Return free movies."""
-        free_movies = Movie.objects.filter(access_type='free', is_active=True)
-        serializer = MovieListSerializer(free_movies, many=True, context={'request': request})
+        free_movies = Movie.objects.filter(
+            access_type='free', 
+            is_active=True
+        ).order_by('-release_date')
+        serializer = MovieListSerializer(
+            free_movies, 
+            many=True, 
+            context={'request': request}
+        )
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], url_path='popular')
     def popular(self, request):
         """Return popular movies sorted by view count."""
-        popular = Movie.objects.filter(is_active=True).order_by('-view_count')[:20]
-        serializer = MovieListSerializer(popular, many=True, context={'request': request})
+        popular = Movie.objects.filter(
+            is_active=True
+        ).order_by('-view_count')[:20]
+        serializer = MovieListSerializer(
+            popular, 
+            many=True, 
+            context={'request': request}
+        )
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], url_path='genres')
     def genres(self, request):
-        """Return all genres (for filter dropdowns). Genre now lives in apps.taxonomy."""
+        """Return all genres for filter dropdowns."""
         genres = Genre.objects.all().order_by('name')
         serializer = GenreSerializer(genres, many=True)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'])
+    @action(detail=False, methods=['get'], url_path='categories')
     def categories(self, request):
-        """Return all categories. Category now lives in apps.taxonomy."""
+        """Return all categories for filter dropdowns."""
         categories = Category.objects.all().order_by('name')
         serializer = CategorySerializer(categories, many=True)
         return Response(serializer.data)
 
+    @action(detail=False, methods=['get'], url_path='related')
+    def related(self, request):
+        """Return related movies based on genre."""
+        movie_id = request.query_params.get('movie_id')
+        if not movie_id:
+            return Response(
+                {'error': 'movie_id is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            movie = Movie.objects.get(id=movie_id, is_active=True)
+            related = Movie.objects.filter(
+                genres__in=movie.genres.all(),
+                is_active=True
+            ).exclude(id=movie.id).distinct()[:10]
+            serializer = MovieListSerializer(
+                related, 
+                many=True, 
+                context={'request': request}
+            )
+            return Response(serializer.data)
+        except Movie.DoesNotExist:
+            return Response(
+                {'error': 'Movie not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+
+# ============================================================
+# EPISODE ENDPOINTS
+# ============================================================
+
+# apps/movies/views.py - ពិនិត្យថាមាន EpisodeViewSet
 
 class EpisodeViewSet(viewsets.ReadOnlyModelViewSet):
-    """
-    Public episode endpoints.
-    - GET /api/episodes/              → List all episodes
-    - GET /api/episodes/{id}/         → Episode detail
-    - GET /api/movies/{movie_id}/episodes/ → Episodes for a specific movie
-    """
+    """Public episode endpoints"""
     queryset = Episode.objects.filter(is_active=True).select_related('movie')
     serializer_class = EpisodeSerializer
     permission_classes = [AllowAny]
@@ -142,10 +186,9 @@ class EpisodeViewSet(viewsets.ReadOnlyModelViewSet):
     filterset_fields = ['movie', 'is_active']
     ordering_fields = ['episode_number']
     ordering = ['episode_number']
-
+    
     def get_queryset(self):
         queryset = super().get_queryset()
-        # Filter by movie_id if provided in URL
         movie_id = self.request.query_params.get('movie_id')
         if movie_id:
             queryset = queryset.filter(movie_id=movie_id)
@@ -156,47 +199,54 @@ class EpisodeViewSet(viewsets.ReadOnlyModelViewSet):
 # BANNER ENDPOINTS
 # ============================================================
 
+# apps/movies/views.py - កែ HeroBannerViewSet
 class HeroBannerViewSet(viewsets.ModelViewSet):
-    """
-    Banner CRUD + public active banners.
-    - GET /api/banners/         → List all banners (admin)
-    - POST /api/banners/        → Create banner (admin)
-    - GET /api/banners/{id}/    → Get banner detail
-    - PUT /api/banners/{id}/    → Update banner (admin)
-    - DELETE /api/banners/{id}/ → Delete banner (admin)
-    - GET /api/banners/active/  → Active banners (public)
-    - GET /api/banners/movies/  → Movies for dropdown (admin)
-    """
+    """Banner CRUD + public active banners"""
     queryset = HeroBanner.objects.all().select_related('movie')
     permission_classes = [IsAdminOrReadOnly]
-    parser_classes = [MultiPartParser, FormParser]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
     filter_backends = [DjangoFilterBackend, filters.OrderingFilter]
     filterset_fields = ['link_type', 'is_active']
     ordering_fields = ['order', 'created_at']
     ordering = ['order']
-
+    
     def get_serializer_class(self):
         if self.action in ['create', 'update', 'partial_update']:
             return HeroBannerCreateUpdateSerializer
         return HeroBannerSerializer
-
+    
     def get_permissions(self):
-        """Public can see active banners, admin can do everything."""
+        """Public can see active banners, admin can do everything"""
         if self.action in ['list', 'retrieve', 'active', 'movies']:
             return [AllowAny()]
         return [IsAdminUser()]
-
-    @action(detail=False, methods=['get'])
+    
+    def get_serializer_context(self):
+        """Pass request to serializer"""
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+    
+    @action(detail=False, methods=['get'], url_path='active')
     def active(self, request):
-        """Return only active banners for public homepage."""
-        banners = HeroBanner.objects.filter(is_active=True).select_related('movie')
-        serializer = HeroBannerSerializer(banners, many=True, context={'request': request})
+        """Return only active banners for public homepage"""
+        banners = HeroBanner.objects.filter(
+            is_active=True
+        ).select_related('movie').order_by('order')
+        serializer = HeroBannerSerializer(
+            banners, 
+            many=True, 
+            context={'request': request}
+        )
         return Response(serializer.data)
-
-    @action(detail=False, methods=['get'])
+    
+    @action(detail=False, methods=['get'], url_path='movies')
     def movies(self, request):
-        """Return movies for admin dropdown selection."""
-        movies = Movie.objects.filter(is_active=True).only('id', 'title', 'release_date', 'rating')
+        """Return movies for admin dropdown"""
+        movies = Movie.objects.filter(is_active=True).only(
+            'id', 'title', 'release_date', 'rating'
+        ).order_by('title')
+        
         data = [
             {
                 'id': m.id,
@@ -213,17 +263,22 @@ class HeroBannerViewSet(viewsets.ModelViewSet):
 # ADMIN ENDPOINTS
 # ============================================================
 
-# apps/movies/views.py (បន្ថែម)
-class SeriesTypeViewSet(viewsets.ModelViewSet):
-    queryset = SeriesType.objects.all()
-    serializer_class = SeriesTypeSerializer
-# apps/movies/views.py
-
 class MovieAdminViewSet(viewsets.ModelViewSet):
     """
     Admin CRUD for movies.
+    Supports direct-to-Bunny (TUS) and legacy server-relay upload.
+    
+    Endpoints:
+    - GET /api/admin/movies/                    → List all movies (admin)
+    - POST /api/admin/movies/                   → Create movie (admin)
+    - GET /api/admin/movies/{id}/               → Movie detail (admin)
+    - PATCH /api/admin/movies/{id}/             → Update movie (admin)
+    - DELETE /api/admin/movies/{id}/            → Delete movie (admin)
+    - POST /api/admin/movies/init-video-upload/ → Init TUS upload (admin)
     """
-    queryset = Movie.objects.all().prefetch_related('genres', 'categories', 'cast', 'crew')
+    queryset = Movie.objects.all().prefetch_related(
+        'genres', 'categories', 'countries', 'series_types'
+    )
     serializer_class = MovieAdminSerializer
     permission_classes = [IsAdminUser]
     parser_classes = [MultiPartParser, FormParser, JSONParser]
@@ -231,37 +286,50 @@ class MovieAdminViewSet(viewsets.ModelViewSet):
     filterset_class = MovieFilter
     search_fields = ['title', 'description']
     ordering_fields = ['release_date', 'rating', 'view_count', 'created_at', 'title']
+    ordering = ['-created_at']
 
-    # ✅ បន្ថែម method នេះ
     def get_serializer_context(self):
+        """Pass request to serializer"""
         context = super().get_serializer_context()
         context['request'] = self.request
         return context
 
     @action(detail=False, methods=['post'], url_path='init-video-upload')
     def init_video_upload(self, request):
-        # ... existing code ...
         """
         Step 1 of the direct-to-Bunny (TUS) video upload flow.
-
+        
         POST { "title": "..." }
-        -> { "endpoint", "video_id", "library_id", "signature", "expiration_time" }
-
-        The admin panel calls this BEFORE picking up the video file. It
-        creates a video slot on Bunny Stream and returns signed TUS
-        credentials so the browser can upload the file bytes straight to
-        Bunny -- this server never receives them, so there's no request
-        size limit, no worker blocked for the upload duration, and the
-        upload can resume automatically if the connection drops
-        (see bunny_service.py for details).
-
-        Once that direct upload finishes client-side, the frontend sends
-        the resulting `video_id` back as `bunny_video_id` in a normal
-        create/update call to this viewset (MovieAdminSerializer), which
-        just derives the playable embed URL from it -- see
-        MovieAdminSerializer._finalize_from_bunny_video_id().
+        Returns signed TUS credentials for browser upload.
         """
         serializer = MovieVideoUploadInitSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         credentials = serializer.save()
         return Response(credentials)
+
+from .serializers import EpisodeAdminSerializer
+
+class EpisodeAdminViewSet(viewsets.ModelViewSet):
+    """
+    Admin CRUD for episodes.
+    
+    Endpoints:
+    - GET    /api/admin/episodes/?movie=<id>  → List episodes for a movie
+    - POST   /api/admin/episodes/             → Create episode
+    - GET    /api/admin/episodes/{id}/        → Episode detail
+    - PATCH  /api/admin/episodes/{id}/        → Update episode
+    - DELETE /api/admin/episodes/{id}/        → Delete episode
+    """
+    queryset = Episode.objects.all().select_related('movie')
+    serializer_class = EpisodeAdminSerializer
+    permission_classes = [IsAdminUser]
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+    filterset_fields = ['movie', 'is_active']
+    ordering = ['movie', 'episode_number']
+
+    def get_queryset(self):
+        queryset = super().get_queryset()
+        movie_id = self.request.query_params.get('movie')
+        if movie_id:
+            queryset = queryset.filter(movie_id=movie_id)
+        return queryset

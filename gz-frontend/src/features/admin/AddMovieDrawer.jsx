@@ -1,4 +1,4 @@
-// src/features/admin/AddMovieDrawer.jsx — Full Code with All New Fields
+// src/features/admin/AddMovieDrawer.jsx — Full Code (Fixed)
 import { useState, useEffect, useRef } from "react";
 import { X, UploadCloud, Loader, AlertCircle, Video, Trash2 } from "lucide-react";
 import * as tus from "tus-js-client";
@@ -25,7 +25,8 @@ const emptyForm = {
   has_khmer_dub: false,
   has_khmer_sub: false,
   bunny_video_id: "",
-  total_episodes: "",  // ← បន្ថែម
+  total_episodes: "",
+  trailer_url: "", 
 };
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -42,14 +43,6 @@ const formatBytes = (bytes) => {
   }
   return `${val.toFixed(1)} ${units[i]}`;
 };
-
-const slugify = (str) =>
-  str
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9\s-]/g, "")
-    .replace(/[\s_-]+/g, "-")
-    .replace(/^-+|-+$/g, "");
 
 function ImageDropBox({ preview, aspect, label, hint, onFileSelect }) {
   const [dragActive, setDragActive] = useState(false);
@@ -150,11 +143,11 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
   const [categories, setCategories] = useState([]);
   const [genres, setGenres] = useState([]);
   const [countries, setCountries] = useState([]);
-  const [seriesTypes, setSeriesTypes] = useState([]);  // ← បន្ថែម
+  const [seriesTypes, setSeriesTypes] = useState([]);
   const [categoryIds, setCategoryIds] = useState([]);
   const [genreIds, setGenreIds] = useState([]);
   const [countryIds, setCountryIds] = useState([]);
-  const [seriesTypeIds, setSeriesTypeIds] = useState([]);  // ← បន្ថែម
+  const [seriesTypeIds, setSeriesTypeIds] = useState([]);
   const [taxonomyLoading, setTaxonomyLoading] = useState(true);
 
   const [imageFile, setImageFile] = useState(null);
@@ -172,7 +165,6 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
   const [submitStage, setSubmitStage] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [formError, setFormError] = useState(null);
-  const abortControllerRef = useRef(null);
   const tusUploadRef = useRef(null);
 
   useEffect(() => {
@@ -196,12 +188,13 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
         has_khmer_dub: movie.has_khmer_dub || false,
         has_khmer_sub: movie.has_khmer_sub || false,
         bunny_video_id: movie.bunny_video_id || "",
-        total_episodes: movie.total_episodes || "",  // ← បន្ថែម
+        total_episodes: movie.total_episodes || "",
+        trailer_url: movie.trailer_url || "",  
       });
       setCategoryIds((movie.categories || []).map((c) => (typeof c === "object" ? c.id : c)));
       setGenreIds((movie.genres || []).map((g) => (typeof g === "object" ? g.id : g)));
       setCountryIds((movie.countries || []).map((c) => (typeof c === "object" ? c.id : c)));
-      setSeriesTypeIds((movie.series_types || []).map((st) => (typeof st === "object" ? st.id : st)));  // ← បន្ថែម
+      setSeriesTypeIds((movie.series_types || []).map((st) => (typeof st === "object" ? st.id : st)));
       setImagePreview(movie.poster || "");
       setBackdropPreview(movie.backdrop || "");
       setBunnyVideoId(movie.bunny_video_id || null);
@@ -217,12 +210,12 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
           adminApi.getCategories(),
           adminApi.getGenres(),
           adminApi.getCountries(),
-          adminApi.getSeriesTypes(),  // ← បន្ថែម
+          adminApi.getSeriesTypes(),
         ]);
         setCategories(catRes.data?.results || catRes.data || []);
         setGenres(genRes.data?.results || genRes.data || []);
         setCountries(countryRes.data?.results || countryRes.data || []);
-        setSeriesTypes(seriesTypeRes.data?.results || seriesTypeRes.data || []);  // ← បន្ថែម
+        setSeriesTypes(seriesTypeRes.data?.results || seriesTypeRes.data || []);
       } catch (err) {
         console.error(err);
       } finally {
@@ -259,7 +252,19 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    setForm((prev) => ({ ...prev, [name]: type === "checkbox" ? checked : value }));
+    
+    setForm((prev) => {
+      const updated = { 
+        ...prev, 
+        [name]: type === "checkbox" ? checked : value 
+      };
+      
+      if (name === 'access_type' && value !== 'purchase') {
+        updated.purchase_price = '';
+      }
+      
+      return updated;
+    });
   };
 
   const handleTitleChange = (e) => {
@@ -278,7 +283,6 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     setCountryIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
-  // ← បន្ថែម toggle function សម្រាប់ Series Types
   const toggleSeriesType = (id) => {
     setSeriesTypeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
@@ -348,15 +352,10 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     new Promise((resolve, reject) => {
       (async () => {
         try {
-          console.log("[bunny-upload] requesting TUS credentials…", {
-            fileName: file.name,
-            fileSizeBytes: file.size,
-            fileSizeGB: (file.size / 1024 / 1024 / 1024).toFixed(2),
-          });
+          console.log("[bunny-upload] requesting TUS credentials…");
 
           const res = await adminApi.initVideoUpload({ title });
           const creds = res.data;
-          console.log("[bunny-upload] got credentials", creds);
 
           const upload = new tus.Upload(file, {
             endpoint: creds.endpoint,
@@ -375,7 +374,6 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
             },
             onProgress: (uploaded, total) => {
               const pct = Math.round((uploaded / total) * 100);
-              console.log(`[bunny-upload] progress ${pct}% (${uploaded}/${total} bytes)`);
               setUploadProgress(pct);
             },
             onSuccess: () => {
@@ -385,15 +383,12 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
           });
 
           tusUploadRef.current = upload;
-          console.log("[bunny-upload] tus.Upload instance created");
 
           const previousUploads = await upload.findPreviousUploads();
-          console.log("[bunny-upload] previousUploads:", previousUploads);
           if (previousUploads.length) {
             upload.resumeFromPreviousUpload(previousUploads[0]);
           }
 
-          console.log("[bunny-upload] calling upload.start()…");
           upload.start();
         } catch (err) {
           console.error("[bunny-upload] setup failed:", err);
@@ -405,37 +400,47 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
       })();
     });
 
-  const handleCancelUpload = () => {
-    if (submitStage === "video") {
-      tusUploadRef.current?.abort();
-    } else {
-      abortControllerRef.current?.abort();
-    }
-  };
-
   const handleSubmit = async (e) => {
     e.preventDefault();
-    console.log("[movie-save] handleSubmit fired", { isEdit, form });
+    
+    console.log("[movie-save] handleSubmit fired", { isEdit });
 
+    // ============ VALIDATION ============
     if (!isEdit && !imageFile) {
       setFormError("A cover image is required.");
       return;
     }
+    
+    if (!form.title.trim()) {
+      setFormError("Title is required.");
+      return;
+    }
+    
     if (!form.description.trim()) {
       setFormError("Description is required.");
       return;
     }
+    
     if (!form.country.trim() || !form.language.trim()) {
       setFormError("Country and language are required.");
       return;
     }
+    
     if (!form.duration) {
       setFormError("Duration is required.");
       return;
     }
+    
     if (!form.release_date) {
       setFormError("Release date is required.");
       return;
+    }
+    
+    if (form.access_type === 'purchase') {
+      if (!form.purchase_price || Number(form.purchase_price) <= 0) {
+        setFormError("Purchase price is required and must be greater than 0 for Pay Per View.");
+        return;
+      }
     }
 
     console.log("[movie-save] validation passed, submitting…");
@@ -452,11 +457,7 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
         setBunnyVideoId(finalBunnyVideoId);
         setForm(prev => ({ ...prev, bunny_video_id: finalBunnyVideoId }));
       } catch (err) {
-        setFormError(
-          err?.message === "AbortError" || err?.name === "AbortError"
-            ? "Video upload canceled."
-            : err?.message || "Video upload to Bunny failed. Please try again."
-        );
+        setFormError(err?.message || "Video upload to Bunny failed. Please try again.");
         setSubmitting(false);
         setSubmitStage(null);
         return;
@@ -467,83 +468,90 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     setUploadProgress(0);
 
     const fd = new FormData();
+    
+    // ============ BASIC FIELDS ============
     fd.append("title", form.title);
     fd.append("description", form.description);
     if (form.short_description) fd.append("short_description", form.short_description);
+    if (form.trailer_url) fd.append("trailer_url", form.trailer_url); 
     fd.append("country", form.country);
     fd.append("language", form.language);
     if (form.release_date) fd.append("release_date", form.release_date);
     fd.append("duration", form.duration);
     if (form.rating) fd.append("rating", form.rating);
-    fd.append("access_type", form.access_type);
-    if (form.purchase_price) fd.append("purchase_price", form.purchase_price);
-    fd.append("is_featured", String(form.is_featured));
-    fd.append("is_new_release", String(form.is_new_release));
-    fd.append("is_active", String(form.is_active));
     
+    // ============ ACCESS TYPE ============
+    fd.append("access_type", form.access_type || "free");
+    if (form.access_type === 'purchase') {
+      fd.append("purchase_price", form.purchase_price);
+    }
+    
+    // ============ FLAGS ============
+    fd.append("is_featured", String(form.is_featured || false));
+    fd.append("is_new_release", String(form.is_new_release || false));
+    fd.append("is_active", String(form.is_active ?? true));
+    
+    // ============ M2M FIELDS ============
     categoryIds.forEach((id) => fd.append("categories", id));
     genreIds.forEach((id) => fd.append("genres", id));
+    countryIds.forEach((id) => fd.append("countries", id));
     
-    // New fields
+    // ============ CONTENT TYPE ============
     fd.append("content_type", form.content_type || "movie");
     fd.append("has_khmer_dub", String(form.has_khmer_dub || false));
     fd.append("has_khmer_sub", String(form.has_khmer_sub || false));
-    countryIds.forEach((id) => fd.append("countries", id));
     
-    // ← បន្ថែម series_types និង total_episodes
-    if (form.content_type === 'tv_show') {
+    // ============ SERIES FIELDS ============
+    // ✅ ក្រោយ
+    if (form.content_type === 'series') {
       seriesTypeIds.forEach((id) => fd.append("series_types", id));
       if (form.total_episodes) {
         fd.append("total_episodes", form.total_episodes);
       }
     }
     
+    // ============ FILES ============
     if (imageFile) fd.append("poster", imageFile);
     if (backdropFile) fd.append("backdrop", backdropFile);
     
+    // ============ VIDEO ============
     if (finalBunnyVideoId) {
       fd.append("bunny_video_id", finalBunnyVideoId);
     } else if (videoCleared) {
       fd.append("bunny_video_id", "");
     }
 
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
-
     try {
-      const config = {
-        signal: controller.signal,
-        onUploadProgress: (evt) => {
-          if (evt.total) setUploadProgress(Math.round((evt.loaded / evt.total) * 100));
-        },
-      };
-      console.log("[movie-save] sending", isEdit ? "PATCH" : "POST", "to /admin/movies/");
+      console.log("[movie-save] sending", isEdit ? "PATCH" : "POST", "to /api/admin/movies/");
+      
       let saveRes;
       if (isEdit) {
-        saveRes = await adminApi.updateMovie(movie.id, fd, config);
+        // ✅ សម្រាប់ edit
+        saveRes = await adminApi.updateMovie(movie.id, fd);
       } else {
-        saveRes = await adminApi.createMovie(fd, config);
+        // ✅ សម្រាប់ create
+        saveRes = await adminApi.createMovie(fd);
       }
+      
       console.log("[movie-save] server responded:", saveRes?.data);
       onSave();
+      
     } catch (err) {
       console.error("[movie-save] save failed:", err);
-      if (err.code === "ERR_CANCELED" || err.name === "CanceledError") {
-        setFormError("Save canceled.");
-      } else {
-        const data = err.response?.data;
-        const detail =
-          data && typeof data === "object"
-            ? Object.entries(data)
-                .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(" ") : msgs}`)
-                .join(" · ")
-            : null;
-        setFormError(detail || "Failed to save movie. Check the data and try again.");
-      }
+      
+      const data = err.response?.data;
+      const detail =
+        data && typeof data === "object"
+          ? Object.entries(data)
+              .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(" ") : msgs}`)
+              .join(" · ")
+          : null;
+      
+      setFormError(detail || "Failed to save movie. Check the data and try again.");
+      
     } finally {
       setSubmitting(false);
       setSubmitStage(null);
-      abortControllerRef.current = null;
       tusUploadRef.current = null;
     }
   };
@@ -622,17 +630,18 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
                 <i className="bi bi-film mr-2"></i>
                 រឿងដុំ (Movie)
               </button>
+              // ✅ ក្រោយ
               <button
                 type="button"
-                onClick={() => setForm(prev => ({ ...prev, content_type: 'tv_show' }))}
+                onClick={() => setForm(prev => ({ ...prev, content_type: 'series' }))}
                 className={`py-3 px-4 rounded-xl border text-sm font-medium transition-colors ${
-                  form.content_type === 'tv_show'
+                  form.content_type === 'series'
                     ? 'bg-amber-500/10 border-amber-500 text-amber-400'
                     : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600'
                 }`}
               >
                 <i className="bi bi-tv mr-2"></i>
-                រឿងភាគ (TV Show)
+                រឿងភាគ (Series)
               </button>
             </div>
           </div>
@@ -661,6 +670,19 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
               placeholder="One-line teaser shown in listing cards"
               className={`${inputClass} w-full`}
             />
+          </div>
+          {/* ✅ Trailer URL — បន្ថែមថ្មី */}
+          <div>
+            <label className="block text-sm font-medium text-slate-300 mb-1">Trailer URL</label>
+            <input
+              type="url"
+              name="trailer_url"
+              value={form.trailer_url}
+              onChange={handleChange}
+              placeholder="https://youtube.com/watch?v=..."
+              className={`${inputClass} w-full`}
+            />
+            <p className="text-[11px] text-slate-500 mt-1">YouTube ឬវីដេអូ trailer link (ស្រេចចិត្ត)</p>
           </div>
 
           {/* Country / Language */}
@@ -691,7 +713,7 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
             </div>
           </div>
 
-          {/* Countries (Multi-select) */}
+          {/* Countries Multi-select */}
           <div>
             <label className="block text-sm font-medium text-slate-300 mb-1.5">
               ប្រទេស (អាចជ្រើសរើសច្រើន)
@@ -721,8 +743,8 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
             )}
           </div>
 
-          {/* ← បន្ថែម Series Types section សម្រាប់ TV Shows */}
-          {form.content_type === 'tv_show' && (
+          {/* Series Types for TV Show */}
+          {form.content_type === 'series' && (
             <>
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1.5">
@@ -731,9 +753,7 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
                 {taxonomyLoading ? (
                   <p className="text-xs text-slate-500">Loading series types…</p>
                 ) : seriesTypes.length === 0 ? (
-                  <p className="text-xs text-slate-500">
-                    មិនទាន់មានប្រភេទរឿងភាគទេ។ សូមបន្ថែមនៅទំព័រ "គ្រប់គ្រងប្រភេទ និងប្រទេស"
-                  </p>
+                  <p className="text-xs text-slate-500">មិនទាន់មានប្រភេទរឿងភាគទេ</p>
                 ) : (
                   <div className="flex flex-wrap gap-1.5">
                     {seriesTypes.map((st) => (
@@ -754,7 +774,6 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
                   </div>
                 )}
               </div>
-
               <div>
                 <label className="block text-sm font-medium text-slate-300 mb-1">
                   ចំនួនភាគសរុប
@@ -813,32 +832,59 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
           </div>
 
           {/* Access type */}
-          <div className="flex gap-4 flex-wrap">
-            <div className="flex-1 min-w-[140px]">
-              <label className="block text-sm font-medium text-slate-300 mb-1">Access type</label>
-              <select
-                name="access_type"
-                value={form.access_type}
-                onChange={handleChange}
-                className={`${inputClass} w-full`}
-              >
-                <option value="free">Free</option>
-                <option value="member">Membership</option>
-                <option value="purchase">Pay Per View</option>
-              </select>
-            </div>
-            {form.access_type === "purchase" && (
+          <div className="space-y-3">
+            <div className="flex gap-4 flex-wrap">
               <div className="flex-1 min-w-[140px]">
-                <label className="block text-sm font-medium text-slate-300 mb-1">Purchase price</label>
-                <input
-                  type="number"
-                  name="purchase_price"
-                  min="0"
-                  step="0.01"
-                  value={form.purchase_price}
+                <label className="block text-sm font-medium text-slate-300 mb-1">
+                  ប្រភេទចូលប្រើ *
+                </label>
+                <select
+                  name="access_type"
+                  value={form.access_type}
                   onChange={handleChange}
                   className={`${inputClass} w-full`}
-                />
+                >
+                  <option value="free">ឥតគិតថ្លៃ (Free)</option>
+                  <option value="member">សមាជិក VIP (Member)</option>
+                  <option value="purchase">ទិញមើល (Pay Per View)</option>
+                </select>
+              </div>
+              
+              {form.access_type === "purchase" && (
+                <div className="flex-1 min-w-[140px]">
+                  <label className="block text-sm font-medium text-slate-300 mb-1">
+                    តម្លៃទិញ *
+                  </label>
+                  <input
+                    type="number"
+                    name="purchase_price"
+                    min="0"
+                    step="0.01"
+                    value={form.purchase_price}
+                    onChange={handleChange}
+                    placeholder="ឧទាហរណ៍៖ 2.99"
+                    required
+                    className={`${inputClass} w-full`}
+                  />
+                </div>
+              )}
+            </div>
+            
+            {form.access_type === "free" && (
+              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 text-sm text-green-400">
+                អ្នកប្រើទាំងអស់អាចមើលបានដោយមិនចាំបាច់ចូលគណនី
+              </div>
+            )}
+            
+            {form.access_type === "member" && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-sm text-amber-400">
+                មានតែសមាជិក VIP ប៉ុណ្ណោះដែលអាចមើលបាន
+              </div>
+            )}
+            
+            {form.access_type === "purchase" && (
+              <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 text-sm text-blue-400">
+                អ្នកប្រើត្រូវទិញមុនពេលមើល។ ចូលប្រើបាន 30 ថ្ងៃ
               </div>
             )}
           </div>
@@ -877,9 +923,6 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
               placeholder="e.g. 123e4567-e89b-12d3-a456-426614174000"
               className={`${inputClass} w-full font-mono text-sm`}
             />
-            <p className="text-xs text-slate-500 mt-1.5">
-              បើមាន Video ID ពី Bunny រួចហើយ អាចបញ្ចូលដោយផ្ទាល់
-            </p>
           </div>
 
           {/* Video file upload */}
@@ -891,15 +934,10 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
                   <video src={videoPreview} controls className="w-full max-h-72 bg-black" />
                   <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-800/80">
                     <span className="text-xs text-slate-300 truncate">
-                      <Video size={13} className="text-amber-400 inline mr-1" />
                       {videoFile.name} · {formatBytes(videoFile.size)}
                     </span>
-                    <button
-                      type="button"
-                      onClick={handleRemoveVideo}
-                      className="text-xs text-red-400 hover:text-red-300"
-                    >
-                      <Trash2 size={13} /> លុប
+                    <button type="button" onClick={handleRemoveVideo} className="text-xs text-red-400 hover:text-red-300">
+                      លុប
                     </button>
                   </div>
                 </div>
@@ -1004,9 +1042,7 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
           {submitting && (
             <div>
               <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                <span>
-                  {submitStage === "video" ? "Uploading video…" : "Saving…"}
-                </span>
+                <span>{submitStage === "video" ? "Uploading video…" : "Saving…"}</span>
                 <span>{uploadProgress}%</span>
               </div>
               <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">

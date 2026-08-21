@@ -1,18 +1,19 @@
+# apps/purchases/views.py
 from datetime import timedelta
 from django.utils import timezone
 from django.db import transaction as db_transaction
+from django.db.models import Sum
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, AllowAny
 from .models import MoviePurchase
 from .serializers import MoviePurchaseSerializer, PurchaseCreateSerializer
 from apps.movies.models import Movie
-from apps.wallet.services.wallet_service import WalletService, InsufficientBalanceError
-from common.pagination import StandardResultsSetPagination
 
 
 class PurchaseCreateView(APIView):
+    """បង្កើតការទិញរឿងថ្មី"""
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -20,82 +21,100 @@ class PurchaseCreateView(APIView):
         serializer.is_valid(raise_exception=True)
 
         movie_id = serializer.validated_data['movie_id']
+        
         try:
-            movie = Movie.objects.get(id=movie_id, is_active=True, access_type='purchase')
+            movie = Movie.objects.get(id=movie_id, is_active=True)
         except Movie.DoesNotExist:
-            return Response({'error': 'Movie not found or not available for purchase'}, status=404)
+            return Response({'error': 'Movie not found'}, status=404)
 
-        # Check if user already has a valid purchase
+        # ពិនិត្យថាទិញរួចហើយ
         if MoviePurchase.has_active_access(request.user, movie):
-            return Response({'error': 'You already have access to this movie.'}, status=400)
+            active_purchase = MoviePurchase.get_active_purchase(request.user, movie)
+            return Response(
+                {
+                    'error': 'You already have access to this movie.',
+                    'purchase': MoviePurchaseSerializer(active_purchase, context={'request': request}).data,
+                }, 
+                status=400
+            )
 
-        if movie.purchase_price is None or movie.purchase_price <= 0:
-            return Response({'error': 'This movie is not currently purchasable.'}, status=400)
-
-        # Charge wallet (debit)
-        try:
-            with db_transaction.atomic():
-                txn = WalletService.debit_wallet(
-                    user=request.user,
-                    amount=movie.purchase_price,
-                    description=f"Purchase: {movie.title}",
-                )
-        except InsufficientBalanceError:
-            return Response({'error': 'Insufficient balance. Please top up your wallet.'},
-                            status=status.HTTP_402_PAYMENT_REQUIRED)
-
-        # Create purchase record
+        # បង្កើត purchase record (TODO: ភ្ជាប់ payment ពិតប្រាកដ)
         purchase = MoviePurchase.objects.create(
             user=request.user,
             movie=movie,
-            amount=movie.purchase_price,
+            amount=movie.purchase_price or 0,
             valid_until=timezone.now() + timedelta(days=30),
-            transaction_id=txn.id,  # wallet transaction ID
         )
 
-        serializer = MoviePurchaseSerializer(purchase)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
+        serializer = MoviePurchaseSerializer(purchase, context={'request': request})
+        return Response(
+            {
+                'message': 'Purchase successful',
+                'purchase': serializer.data,
+            }, 
+            status=201
+        )
 
 
 class PurchaseListView(APIView):
+    """បញ្ជីការទិញ"""
     permission_classes = [IsAuthenticated]
-    pagination_class = StandardResultsSetPagination
 
     def get(self, request):
-        purchases = MoviePurchase.objects.filter(user=request.user).select_related('movie')
-        paginator = self.pagination_class()
-        page = paginator.paginate_queryset(purchases, request)
-        if page is not None:
-            serializer = MoviePurchaseSerializer(page, many=True)
-            return paginator.get_paginated_response(serializer.data)
-        serializer = MoviePurchaseSerializer(purchases, many=True)
-        return Response(serializer.data)
-
-
-class PurchaseDetailView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def get(self, request, pk):
-        try:
-            purchase = MoviePurchase.objects.get(pk=pk, user=request.user)
-        except MoviePurchase.DoesNotExist:
-            return Response({'error': 'Purchase not found'}, status=404)
-        serializer = MoviePurchaseSerializer(purchase)
+        purchases = MoviePurchase.objects.filter(
+            user=request.user
+        ).select_related('movie')
+        
+        serializer = MoviePurchaseSerializer(purchases, many=True, context={'request': request})
         return Response(serializer.data)
 
 
 class AccessCheckView(APIView):
-    """Check if the authenticated user has access to a given movie (useful for the player page)."""
+    """ពិនិត្យការទិញ"""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         movie_id = request.query_params.get('movie_id')
+        
         if not movie_id:
-            return Response({'error': 'movie_id query parameter is required'}, status=400)
-        try:
-            movie = Movie.objects.get(pk=movie_id)
-        except Movie.DoesNotExist:
-            return Response({'error': 'Movie not found'}, status=404)
+            return Response({'error': 'movie_id is required'}, status=400)
+        
+        active_purchase = MoviePurchase.objects.filter(
+            user=request.user,
+            movie_id=movie_id,
+            valid_until__gt=timezone.now()
+        ).first()
+        
+        if active_purchase:
+            return Response({
+                'has_access': True,
+                'has_purchased': True,
+                'purchase': MoviePurchaseSerializer(active_purchase, context={'request': request}).data,
+            })
+        
+        return Response({
+            'has_access': False,
+            'has_purchased': False,
+            'purchase': None,
+        })
 
-        has_access = MoviePurchase.has_active_access(request.user, movie)
-        return Response({'has_access': has_access})
+
+class PPVStatsView(APIView):
+    """Pay-per-view statistics"""
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        active_purchases = MoviePurchase.objects.filter(
+            valid_until__gt=timezone.now()
+        )
+        
+        total_revenue = MoviePurchase.objects.aggregate(
+            total=Sum('amount')
+        )['total'] or 0
+        
+        return Response({
+            'active_purchasers': active_purchases.values('user').distinct().count(),
+            'active_purchase_count': active_purchases.count(),
+            'total_purchases': MoviePurchase.objects.count(),
+            'total_revenue': float(total_revenue),
+        })

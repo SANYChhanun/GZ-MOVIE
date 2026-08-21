@@ -44,10 +44,10 @@ export default function Header() {
     (async () => {
       try {
         const [seriesRes, genreRes, countryRes] = await Promise.allSettled([
-          axiosClient.get('/series-types/'),
-          axiosClient.get('/genres/'),
-          axiosClient.get('/countries/'),
-        ]);
+          axiosClient.get('/api/series-types/'),
+          axiosClient.get('/api/genres/'),
+          axiosClient.get('/api/countries/'),
+          ]);
         if (!mounted) return;
 
         if (seriesRes.status === 'fulfilled') {
