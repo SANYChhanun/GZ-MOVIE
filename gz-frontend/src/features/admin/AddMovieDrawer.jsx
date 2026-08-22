@@ -1,6 +1,30 @@
-// src/features/admin/AddMovieDrawer.jsx — Full Code (Fixed)
-import { useState, useEffect, useRef } from "react";
-import { X, UploadCloud, Loader, AlertCircle, Video, Trash2 } from "lucide-react";
+// src/pages/admin/AddMoviePage.jsx
+//
+// Full-screen replacement for AddMovieDrawer.jsx.
+// Same data model, same submit logic (Bunny TUS upload, FormData build),
+// reorganized into a left-hand step navigator so users fill the form in a
+// clear, logical order instead of scrolling one long modal.
+//
+// Usage (drop-in): render this instead of <AddMovieDrawer /> — e.g. as a
+// route ("/admin/movies/new", "/admin/movies/:id/edit") or as a full-screen
+// overlay from MovieListPage. It keeps the same props (`movie`, `onClose`,
+// `onSave`) so wiring it up is a one-line swap.
+
+import { useState, useEffect, useRef, useMemo } from "react";
+import {
+  ArrowLeft,
+  UploadCloud,
+  Loader,
+  AlertCircle,
+  CheckCircle2,
+  Circle,
+  Trash2,
+  Film,
+  Image as ImageIcon,
+  Tags,
+  Settings2,
+  Video,
+} from "lucide-react";
 import * as tus from "tus-js-client";
 import adminApi from "../../api/adminApi";
 import { inputClass } from "../../utils/constants";
@@ -26,7 +50,7 @@ const emptyForm = {
   has_khmer_sub: false,
   bunny_video_id: "",
   total_episodes: "",
-  trailer_url: "", 
+  trailer_url: "",
 };
 
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
@@ -43,6 +67,22 @@ const formatBytes = (bytes) => {
   }
   return `${val.toFixed(1)} ${units[i]}`;
 };
+
+/* ============================================================
+   Step definitions — order = the order users fill the form in
+   ============================================================ */
+
+const STEPS = [
+  { id: "basic", label: "ព័ត៌មានមូលដ្ឋាន", sublabel: "Title & description", icon: Film },
+  { id: "media", label: "រូបភាព & Trailer", sublabel: "Poster, backdrop, trailer", icon: ImageIcon },
+  { id: "classify", label: "ចំណាត់ថ្នាក់", sublabel: "Genres, categories, countries", icon: Tags },
+  { id: "access", label: "សិទ្ធិចូលមើល", sublabel: "Access type & display options", icon: Settings2 },
+  { id: "video", label: "វីដេអូ", sublabel: "Upload or link the video", icon: Video },
+];
+
+/* ============================================================
+   Small shared building blocks
+   ============================================================ */
 
 function ImageDropBox({ preview, aspect, label, hint, onFileSelect }) {
   const [dragActive, setDragActive] = useState(false);
@@ -74,13 +114,13 @@ function ImageDropBox({ preview, aspect, label, hint, onFileSelect }) {
   };
 
   return (
-    <div className="flex-1 min-w-[160px]">
+    <div className="flex-1 min-w-[200px]">
       <div
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
         onDrop={handleDrop}
-        className={`group relative w-full ${aspect} rounded-lg border-2 border-dashed overflow-hidden transition-colors ${
+        className={`group relative w-full ${aspect} rounded-xl border-2 border-dashed overflow-hidden transition-colors ${
           dragActive ? "border-amber-400 bg-amber-500/5" : "border-slate-700 bg-slate-800/50"
         }`}
       >
@@ -88,14 +128,14 @@ function ImageDropBox({ preview, aspect, label, hint, onFileSelect }) {
           <>
             <img src={preview} alt={`${label} preview`} className="h-full w-full object-cover" />
             <label className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/50 transition-colors cursor-pointer">
-              <UploadCloud size={16} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
+              <UploadCloud size={20} className="text-white opacity-0 group-hover:opacity-100 transition-opacity" />
               <input type="file" accept="image/*" className="hidden" onChange={handleInputChange} />
             </label>
           </>
         ) : (
-          <label className="flex flex-col items-center justify-center gap-1 h-full px-2 text-center cursor-pointer">
-            <UploadCloud size={18} className="text-slate-500" />
-            <span className="text-[11px] text-slate-500">Upload</span>
+          <label className="flex flex-col items-center justify-center gap-1.5 h-full px-2 text-center cursor-pointer">
+            <UploadCloud size={22} className="text-slate-500" />
+            <span className="text-xs text-slate-500">ចុចដើម្បីបញ្ចូលរូបភាព</span>
             <input type="file" accept="image/*" className="hidden" onChange={handleInputChange} />
           </label>
         )}
@@ -136,8 +176,52 @@ function ToggleSwitch({ checked, onChange, label, description }) {
   );
 }
 
-export default function AddMovieDrawer({ movie, onClose, onSave }) {
+function PillMultiSelect({ items, selectedIds, onToggle, emptyLabel, loading, renderExtra }) {
+  if (loading) return <p className="text-xs text-slate-500">កំពុងផ្ទុក…</p>;
+  if (!items.length) return <p className="text-xs text-slate-500">{emptyLabel}</p>;
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {items.map((item) => {
+        const active = selectedIds.includes(item.id);
+        return (
+          <button
+            key={item.id}
+            type="button"
+            onClick={() => onToggle(item.id)}
+            className={`text-xs px-3 py-1.5 rounded-full border transition-colors ${
+              active
+                ? "bg-amber-500 text-slate-950 border-amber-500 font-medium"
+                : "bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-600"
+            }`}
+          >
+            {renderExtra ? renderExtra(item) : null}
+            {item.name}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function FormSection({ id, title, description, children }) {
+  return (
+    <section id={`section-${id}`} className="scroll-mt-24 space-y-5">
+      <div>
+        <h2 className="text-lg font-semibold text-white">{title}</h2>
+        {description && <p className="text-sm text-slate-500 mt-0.5">{description}</p>}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/* ============================================================
+   Main page
+   ============================================================ */
+
+export default function AddMoviePage({ movie, onClose, onSave }) {
   const isEdit = Boolean(movie);
+  const [activeStep, setActiveStep] = useState("basic");
 
   const [form, setForm] = useState(emptyForm);
   const [categories, setCategories] = useState([]);
@@ -167,6 +251,7 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
   const [formError, setFormError] = useState(null);
   const tusUploadRef = useRef(null);
 
+  /* ---------- load existing movie into form (edit mode) ---------- */
   useEffect(() => {
     if (movie) {
       setForm({
@@ -189,7 +274,7 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
         has_khmer_sub: movie.has_khmer_sub || false,
         bunny_video_id: movie.bunny_video_id || "",
         total_episodes: movie.total_episodes || "",
-        trailer_url: movie.trailer_url || "",  
+        trailer_url: movie.trailer_url || "",
       });
       setCategoryIds((movie.categories || []).map((c) => (typeof c === "object" ? c.id : c)));
       setGenreIds((movie.genres || []).map((g) => (typeof g === "object" ? g.id : g)));
@@ -202,6 +287,7 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     }
   }, [movie]);
 
+  /* ---------- load taxonomy lists ---------- */
   useEffect(() => {
     (async () => {
       setTaxonomyLoading(true);
@@ -224,77 +310,67 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     })();
   }, []);
 
+  /* ---------- confirm-before-leaving on Escape ---------- */
   useEffect(() => {
     const onKeyDown = (e) => {
-      if (e.key === "Escape" && !submitting) onClose();
+      if (e.key === "Escape" && !submitting) handleLeave();
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [submitting, onClose]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [submitting]);
 
   useEffect(() => {
     return () => {
       if (imageFile && imagePreview) URL.revokeObjectURL(imagePreview);
     };
   }, [imagePreview]);
-
   useEffect(() => {
     return () => {
       if (backdropFile && backdropPreview) URL.revokeObjectURL(backdropPreview);
     };
   }, [backdropPreview]);
-
   useEffect(() => {
     return () => {
       if (videoPreview) URL.revokeObjectURL(videoPreview);
     };
   }, [videoPreview]);
 
+  const handleLeave = () => {
+    onClose();
+  };
+
+  /* ---------- generic field handlers ---------- */
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
-    
     setForm((prev) => {
-      const updated = { 
-        ...prev, 
-        [name]: type === "checkbox" ? checked : value 
-      };
-      
-      if (name === 'access_type' && value !== 'purchase') {
-        updated.purchase_price = '';
+      const updated = { ...prev, [name]: type === "checkbox" ? checked : value };
+      if (name === "access_type" && value !== "purchase") {
+        updated.purchase_price = "";
       }
-      
       return updated;
     });
   };
+  const handleTitleChange = (e) => setForm((prev) => ({ ...prev, title: e.target.value }));
 
-  const handleTitleChange = (e) => {
-    setForm((prev) => ({ ...prev, title: e.target.value }));
-  };
-
-  const toggleCategory = (id) => {
+  const toggleCategory = (id) =>
     setCategoryIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
-
-  const toggleGenre = (id) => {
+  const toggleGenre = (id) =>
     setGenreIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
-
-  const toggleCountry = (id) => {
+  const toggleCountry = (id) =>
     setCountryIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
-
-  const toggleSeriesType = (id) => {
+  const toggleSeriesType = (id) =>
     setSeriesTypeIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
-  };
 
+  /* ---------- images ---------- */
   const handleImageSelect = (file, type) => {
     if (!file) return;
     if (!file.type.startsWith("image/")) {
-      setFormError("Please choose an image file (PNG or JPG).");
+      setFormError("សូមជ្រើសរើសឯកសាររូបភាព (PNG ឬ JPG)។");
       return;
     }
     if (file.size > MAX_IMAGE_BYTES) {
-      setFormError("Image is too large — please keep it under 5MB.");
+      setFormError("រូបភាពធំពេក — សូមរក្សាទុកក្រោម 5MB។");
       return;
     }
     setFormError(null);
@@ -308,16 +384,17 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     }
   };
 
+  /* ---------- video ---------- */
   const handleVideoInputChange = (e) => {
     const file = e.target.files?.[0];
     e.target.value = "";
     if (!file) return;
     if (!file.type.startsWith("video/")) {
-      setFormError("Please choose a video file.");
+      setFormError("សូមជ្រើសរើសឯកសារវីដេអូ។");
       return;
     }
     if (file.size > MAX_VIDEO_BYTES) {
-      setFormError("Video is too large — please keep it under 50GB.");
+      setFormError("វីដេអូធំពេក — សូមរក្សាទុកក្រោម 50GB។");
       return;
     }
     setFormError(null);
@@ -327,12 +404,10 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     setVideoCleared(false);
     setBunnyVideoId(null);
   };
-
   const handleVideoDrop = (e) => {
     e.preventDefault();
     handleVideoInputChange({ target: { files: e.dataTransfer.files, value: "" } });
   };
-
   const handleRemoveVideo = () => {
     if (videoPreview) URL.revokeObjectURL(videoPreview);
     if (videoFile) {
@@ -352,8 +427,6 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     new Promise((resolve, reject) => {
       (async () => {
         try {
-          console.log("[bunny-upload] requesting TUS credentials…");
-
           const res = await adminApi.initVideoUpload({ title });
           const creds = res.data;
 
@@ -368,82 +441,88 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
             },
             metadata: { filetype: file.type, title: file.name },
             chunkSize: 50 * 1024 * 1024,
-            onError: (err) => {
-              console.error("[bunny-upload] tus onError", err);
-              reject(err);
-            },
-            onProgress: (uploaded, total) => {
-              const pct = Math.round((uploaded / total) * 100);
-              setUploadProgress(pct);
-            },
-            onSuccess: () => {
-              console.log("[bunny-upload] success, video_id:", creds.video_id);
-              resolve(creds.video_id);
-            },
+            onError: (err) => reject(err),
+            onProgress: (uploaded, total) => setUploadProgress(Math.round((uploaded / total) * 100)),
+            onSuccess: () => resolve(creds.video_id),
           });
 
           tusUploadRef.current = upload;
 
           const previousUploads = await upload.findPreviousUploads();
-          if (previousUploads.length) {
-            upload.resumeFromPreviousUpload(previousUploads[0]);
-          }
+          if (previousUploads.length) upload.resumeFromPreviousUpload(previousUploads[0]);
 
           upload.start();
         } catch (err) {
-          console.error("[bunny-upload] setup failed:", err);
           const detail = err?.response?.status
             ? `(${err.response.status}) ${JSON.stringify(err.response.data)}`
             : err?.message || "unknown error";
-          reject(new Error(`Could not start the video upload — ${detail}`));
+          reject(new Error(`មិនអាចចាប់ផ្តើមផ្ទុកវីដេអូបានទេ — ${detail}`));
         }
       })();
     });
 
+  /* ---------- per-step validation, for the sidebar status dots ---------- */
+  const stepIssues = useMemo(() => {
+    const issues = { basic: [], media: [], classify: [], access: [], video: [] };
+    if (!form.title.trim()) issues.basic.push("ចំណងជើងត្រូវការ");
+    if (!form.description.trim()) issues.basic.push("ការពិពណ៌នាត្រូវការ");
+    if (!form.country.trim() || !form.language.trim()) issues.basic.push("ប្រទេស/ភាសាត្រូវការ");
+    if (!form.duration) issues.basic.push("រយៈពេលត្រូវការ");
+    if (!form.release_date) issues.basic.push("កាលបរិច្ឆេទចេញផ្សាយត្រូវការ");
+    if (!isEdit && !imageFile) issues.media.push("Poster ត្រូវការ");
+    if (form.access_type === "purchase" && (!form.purchase_price || Number(form.purchase_price) <= 0)) {
+      issues.access.push("តម្លៃទិញត្រូវការ");
+    }
+    return issues;
+  }, [form, imageFile, isEdit]);
+
+  const scrollToStep = (id) => {
+    setActiveStep(id);
+    document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  /* ---------- submit (identical logic to the original drawer) ---------- */
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
-    console.log("[movie-save] handleSubmit fired", { isEdit });
 
-    // ============ VALIDATION ============
     if (!isEdit && !imageFile) {
-      setFormError("A cover image is required.");
+      setFormError("Poster គម្របត្រូវការ។");
+      scrollToStep("media");
       return;
     }
-    
     if (!form.title.trim()) {
-      setFormError("Title is required.");
+      setFormError("ចំណងជើងត្រូវការ។");
+      scrollToStep("basic");
       return;
     }
-    
     if (!form.description.trim()) {
-      setFormError("Description is required.");
+      setFormError("ការពិពណ៌នាត្រូវការ។");
+      scrollToStep("basic");
       return;
     }
-    
     if (!form.country.trim() || !form.language.trim()) {
-      setFormError("Country and language are required.");
+      setFormError("ប្រទេស និងភាសាត្រូវការ។");
+      scrollToStep("basic");
       return;
     }
-    
     if (!form.duration) {
-      setFormError("Duration is required.");
+      setFormError("រយៈពេលត្រូវការ។");
+      scrollToStep("basic");
       return;
     }
-    
     if (!form.release_date) {
-      setFormError("Release date is required.");
+      setFormError("កាលបរិច្ឆេទចេញផ្សាយត្រូវការ។");
+      scrollToStep("basic");
       return;
     }
-    
-    if (form.access_type === 'purchase') {
+    if (form.access_type === "purchase") {
       if (!form.purchase_price || Number(form.purchase_price) <= 0) {
-        setFormError("Purchase price is required and must be greater than 0 for Pay Per View.");
+        setFormError("តម្លៃទិញត្រូវការ ហើយត្រូវធំជាង 0 សម្រាប់ Pay Per View។");
+        scrollToStep("access");
         return;
       }
     }
 
-    console.log("[movie-save] validation passed, submitting…");
     setSubmitting(true);
     setFormError(null);
     setUploadProgress(0);
@@ -455,9 +534,9 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
       try {
         finalBunnyVideoId = await uploadVideoDirectToBunny(videoFile, form.title || "Untitled");
         setBunnyVideoId(finalBunnyVideoId);
-        setForm(prev => ({ ...prev, bunny_video_id: finalBunnyVideoId }));
+        setForm((prev) => ({ ...prev, bunny_video_id: finalBunnyVideoId }));
       } catch (err) {
-        setFormError(err?.message || "Video upload to Bunny failed. Please try again.");
+        setFormError(err?.message || "ការផ្ទុកវីដេអូទៅ Bunny បរាជ័យ។ សូមព្យាយាមម្តងទៀត។");
         setSubmitting(false);
         setSubmitStage(null);
         return;
@@ -468,53 +547,39 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     setUploadProgress(0);
 
     const fd = new FormData();
-    
-    // ============ BASIC FIELDS ============
     fd.append("title", form.title);
     fd.append("description", form.description);
     if (form.short_description) fd.append("short_description", form.short_description);
-    if (form.trailer_url) fd.append("trailer_url", form.trailer_url); 
+    if (form.trailer_url) fd.append("trailer_url", form.trailer_url);
     fd.append("country", form.country);
     fd.append("language", form.language);
     if (form.release_date) fd.append("release_date", form.release_date);
     fd.append("duration", form.duration);
     if (form.rating) fd.append("rating", form.rating);
-    
-    // ============ ACCESS TYPE ============
+
     fd.append("access_type", form.access_type || "free");
-    if (form.access_type === 'purchase') {
-      fd.append("purchase_price", form.purchase_price);
-    }
-    
-    // ============ FLAGS ============
+    if (form.access_type === "purchase") fd.append("purchase_price", form.purchase_price);
+
     fd.append("is_featured", String(form.is_featured || false));
     fd.append("is_new_release", String(form.is_new_release || false));
     fd.append("is_active", String(form.is_active ?? true));
-    
-    // ============ M2M FIELDS ============
+
     categoryIds.forEach((id) => fd.append("categories", id));
     genreIds.forEach((id) => fd.append("genres", id));
     countryIds.forEach((id) => fd.append("countries", id));
-    
-    // ============ CONTENT TYPE ============
+
     fd.append("content_type", form.content_type || "movie");
     fd.append("has_khmer_dub", String(form.has_khmer_dub || false));
     fd.append("has_khmer_sub", String(form.has_khmer_sub || false));
-    
-    // ============ SERIES FIELDS ============
-    // ✅ ក្រោយ
-    if (form.content_type === 'series') {
+
+    if (form.content_type === "series") {
       seriesTypeIds.forEach((id) => fd.append("series_types", id));
-      if (form.total_episodes) {
-        fd.append("total_episodes", form.total_episodes);
-      }
+      if (form.total_episodes) fd.append("total_episodes", form.total_episodes);
     }
-    
-    // ============ FILES ============
+
     if (imageFile) fd.append("poster", imageFile);
     if (backdropFile) fd.append("backdrop", backdropFile);
-    
-    // ============ VIDEO ============
+
     if (finalBunnyVideoId) {
       fd.append("bunny_video_id", finalBunnyVideoId);
     } else if (videoCleared) {
@@ -522,23 +587,14 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     }
 
     try {
-      console.log("[movie-save] sending", isEdit ? "PATCH" : "POST", "to /api/admin/movies/");
-      
-      let saveRes;
       if (isEdit) {
-        // ✅ សម្រាប់ edit
-        saveRes = await adminApi.updateMovie(movie.id, fd);
+        await adminApi.updateMovie(movie.id, fd);
       } else {
-        // ✅ សម្រាប់ create
-        saveRes = await adminApi.createMovie(fd);
+        await adminApi.createMovie(fd);
       }
-      
-      console.log("[movie-save] server responded:", saveRes?.data);
       onSave();
-      
     } catch (err) {
       console.error("[movie-save] save failed:", err);
-      
       const data = err.response?.data;
       const detail =
         data && typeof data === "object"
@@ -546,9 +602,7 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
               .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(" ") : msgs}`)
               .join(" · ")
           : null;
-      
-      setFormError(detail || "Failed to save movie. Check the data and try again.");
-      
+      setFormError(detail || "រក្សាទុកមិនបានសម្រេច។ សូមពិនិត្យទិន្នន័យ ហើយព្យាយាមម្តងទៀត។");
     } finally {
       setSubmitting(false);
       setSubmitStage(null);
@@ -556,520 +610,574 @@ export default function AddMovieDrawer({ movie, onClose, onSave }) {
     }
   };
 
+  /* ============================================================
+     Render
+     ============================================================ */
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/70 backdrop-blur-sm py-8 px-4"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget && !submitting) onClose();
-      }}
-    >
-      <div className="relative w-full max-w-2xl my-auto rounded-2xl bg-slate-900 border border-slate-800 shadow-2xl">
-        <div className="flex items-center justify-between p-6 border-b border-slate-800">
-          <div>
-            <h2 className="text-xl font-bold text-white">{isEdit ? "Edit Movie" : "Add Movie"}</h2>
-            <p className="text-sm text-slate-400 mt-1">
-              {isEdit ? "Update this title's details" : "Fill in the details to add a new title"}
+    <div className="fixed inset-0 z-50 bg-slate-950 flex flex-col">
+      {/* Top bar */}
+      <header className="shrink-0 flex items-center justify-between gap-4 px-4 sm:px-6 py-3.5 border-b border-slate-800 bg-slate-900/80 backdrop-blur">
+        <div className="flex items-center gap-3 min-w-0">
+          <button
+            type="button"
+            onClick={handleLeave}
+            disabled={submitting}
+            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 disabled:opacity-40 transition-colors shrink-0"
+            title="ត្រឡប់ក្រោយ"
+          >
+            <ArrowLeft size={18} />
+          </button>
+          <div className="min-w-0">
+            <h1 className="text-base sm:text-lg font-bold text-white truncate">
+              {isEdit ? `កែប្រែ — ${movie.title}` : "បន្ថែមរឿងថ្មី"}
+            </h1>
+            <p className="text-xs text-slate-500 truncate">
+              {isEdit ? "កែប្រែព័ត៌មានលម្អិតរបស់ចំណងជើងនេះ" : "បំពេញព័ត៌មានតាមជំហានខាងឆ្វេង"}
             </p>
           </div>
+        </div>
+        <div className="flex items-center gap-2.5 shrink-0">
           <button
-            onClick={() => !submitting && onClose()}
+            type="button"
+            onClick={handleLeave}
             disabled={submitting}
-            className="text-slate-400 hover:text-white disabled:opacity-40 p-2"
+            className="px-4 py-2 text-sm rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-50 transition-colors"
           >
-            <X size={20} />
+            បោះបង់
+          </button>
+          <button
+            type="submit"
+            form="movie-form"
+            disabled={submitting}
+            className="inline-flex items-center gap-1.5 px-5 py-2 text-sm rounded-lg bg-amber-500 text-slate-950 font-medium hover:bg-amber-400 disabled:opacity-60 transition-colors"
+          >
+            {submitting && <Loader size={14} className="animate-spin" />}
+            {isEdit ? "រក្សាទុកការកែប្រែ" : "បង្កើតរឿង"}
           </button>
         </div>
+      </header>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          {/* Cover poster + Backdrop */}
-          <div className="flex gap-4 flex-wrap sm:flex-nowrap">
-            <ImageDropBox
-              preview={imagePreview}
-              aspect="aspect-[2/3]"
-              label={`Cover poster ${!isEdit ? "*" : ""}`}
-              hint="2:3 ratio, e.g. 800×1200. Up to 5MB."
-              onFileSelect={(file) => handleImageSelect(file, "poster")}
-            />
-            <ImageDropBox
-              preview={backdropPreview}
-              aspect="aspect-video"
-              label="Backdrop / Banner"
-              hint="16:9 ratio, e.g. 1600×900. Up to 5MB."
-              onFileSelect={(file) => handleImageSelect(file, "backdrop")}
-            />
-          </div>
-
-          {/* Title */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Title *</label>
-            <input
-              type="text"
-              name="title"
-              value={form.title}
-              onChange={handleTitleChange}
-              required
-              className={`${inputClass} w-full`}
-            />
-          </div>
-
-          {/* Content Type */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">
-              ប្រភេទមាតិកា *
-            </label>
-            <div className="grid grid-cols-2 gap-3">
+      {/* Body: sidebar steps + scrollable form */}
+      <div className="flex-1 min-h-0 flex">
+        {/* Sidebar */}
+        <nav className="hidden md:flex w-64 shrink-0 flex-col border-r border-slate-800 bg-slate-900/40 p-4 gap-1 overflow-y-auto">
+          {STEPS.map((step) => {
+            const Icon = step.icon;
+            const issues = stepIssues[step.id] || [];
+            const isActive = activeStep === step.id;
+            const isSeriesOnly = step.id === "video" ? false : false;
+            return (
               <button
+                key={step.id}
                 type="button"
-                onClick={() => setForm(prev => ({ ...prev, content_type: 'movie' }))}
-                className={`py-3 px-4 rounded-xl border text-sm font-medium transition-colors ${
-                  form.content_type === 'movie'
-                    ? 'bg-amber-500/10 border-amber-500 text-amber-400'
-                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600'
+                onClick={() => scrollToStep(step.id)}
+                className={`flex items-start gap-3 text-left px-3 py-2.5 rounded-xl border transition-colors ${
+                  isActive
+                    ? "bg-amber-500/10 border-amber-500/40"
+                    : "border-transparent hover:bg-slate-800/60"
                 }`}
               >
-                <i className="bi bi-film mr-2"></i>
-                រឿងដុំ (Movie)
+                <span
+                  className={`mt-0.5 flex items-center justify-center w-7 h-7 rounded-lg shrink-0 ${
+                    isActive ? "bg-amber-500 text-slate-950" : "bg-slate-800 text-slate-400"
+                  }`}
+                >
+                  <Icon size={14} />
+                </span>
+                <span className="min-w-0">
+                  <span className={`block text-sm font-medium ${isActive ? "text-amber-300" : "text-slate-200"}`}>
+                    {step.label}
+                  </span>
+                  <span className="block text-[11px] text-slate-500">{step.sublabel}</span>
+                  {issues.length > 0 && (
+                    <span className="inline-flex items-center gap-1 mt-1 text-[11px] text-red-400">
+                      <AlertCircle size={11} /> {issues.length} ចំណុចត្រូវបំពេញ
+                    </span>
+                  )}
+                  {issues.length === 0 && step.id !== "video" && (
+                    <span className="inline-flex items-center gap-1 mt-1 text-[11px] text-emerald-500/80">
+                      <CheckCircle2 size={11} /> ត្រៀមរួចរាល់
+                    </span>
+                  )}
+                </span>
               </button>
-              // ✅ ក្រោយ
+            );
+          })}
+
+          <div className="mt-auto pt-4 border-t border-slate-800 text-[11px] text-slate-600 px-1">
+            {form.content_type === "series" ? "ប្រភេទ៖ រឿងភាគ (Series)" : "ប្រភេទ៖ រឿងដុំ (Movie)"}
+          </div>
+        </nav>
+
+        {/* Mobile step tabs */}
+        <div className="md:hidden shrink-0 border-b border-slate-800 bg-slate-900/40 overflow-x-auto">
+          <div className="flex gap-1 p-2 min-w-max">
+            {STEPS.map((step) => (
               <button
+                key={step.id}
                 type="button"
-                onClick={() => setForm(prev => ({ ...prev, content_type: 'series' }))}
-                className={`py-3 px-4 rounded-xl border text-sm font-medium transition-colors ${
-                  form.content_type === 'series'
-                    ? 'bg-amber-500/10 border-amber-500 text-amber-400'
-                    : 'bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600'
+                onClick={() => scrollToStep(step.id)}
+                className={`px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                  activeStep === step.id
+                    ? "bg-amber-500 text-slate-950"
+                    : "bg-slate-800 text-slate-400"
                 }`}
               >
-                <i className="bi bi-tv mr-2"></i>
-                រឿងភាគ (Series)
+                {step.label}
               </button>
-            </div>
+            ))}
           </div>
+        </div>
 
-          {/* Description */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Description *</label>
-            <textarea
-              name="description"
-              value={form.description}
-              onChange={handleChange}
-              rows={3}
-              required
-              className={`${inputClass} w-full resize-none`}
-            />
-          </div>
-
-          {/* Short description */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Short description</label>
-            <input
-              type="text"
-              name="short_description"
-              value={form.short_description}
-              onChange={handleChange}
-              placeholder="One-line teaser shown in listing cards"
-              className={`${inputClass} w-full`}
-            />
-          </div>
-          {/* ✅ Trailer URL — បន្ថែមថ្មី */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Trailer URL</label>
-            <input
-              type="url"
-              name="trailer_url"
-              value={form.trailer_url}
-              onChange={handleChange}
-              placeholder="https://youtube.com/watch?v=..."
-              className={`${inputClass} w-full`}
-            />
-            <p className="text-[11px] text-slate-500 mt-1">YouTube ឬវីដេអូ trailer link (ស្រេចចិត្ត)</p>
-          </div>
-
-          {/* Country / Language */}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Country *</label>
-              <input
-                type="text"
-                name="country"
-                value={form.country}
-                onChange={handleChange}
-                required
-                placeholder="e.g. Cambodia"
-                className={`${inputClass} w-full`}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Language *</label>
-              <input
-                type="text"
-                name="language"
-                value={form.language}
-                onChange={handleChange}
-                required
-                placeholder="e.g. Khmer"
-                className={`${inputClass} w-full`}
-              />
-            </div>
-          </div>
-
-          {/* Countries Multi-select */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">
-              ប្រទេស (អាចជ្រើសរើសច្រើន)
-            </label>
-            {taxonomyLoading ? (
-              <p className="text-xs text-slate-500">Loading countries…</p>
-            ) : countries.length === 0 ? (
-              <p className="text-xs text-slate-500">No countries yet.</p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {countries.map((c) => (
+        {/* Scrollable form area */}
+        <main className="flex-1 overflow-y-auto">
+          <form id="movie-form" onSubmit={handleSubmit} className="max-w-3xl mx-auto px-4 sm:px-8 py-8 space-y-14">
+            {/* ================= STEP 1: BASIC INFO ================= */}
+            <FormSection
+              id="basic"
+              title="ព័ត៌មានមូលដ្ឋាន"
+              description="ចំណងជើង ការពិពណ៌នា និងព័ត៌មានទូទៅរបស់ចំណងជើងនេះ"
+            >
+              {/* Content type */}
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">ប្រភេទមាតិកា *</label>
+                <div className="grid grid-cols-2 gap-3">
                   <button
-                    key={c.id}
                     type="button"
-                    onClick={() => toggleCountry(c.id)}
-                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                      countryIds.includes(c.id)
-                        ? "bg-amber-500 text-slate-950 border-amber-500"
-                        : "bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-600"
+                    onClick={() => setForm((prev) => ({ ...prev, content_type: "movie" }))}
+                    className={`py-3 px-4 rounded-xl border text-sm font-medium transition-colors ${
+                      form.content_type === "movie"
+                        ? "bg-amber-500/10 border-amber-500 text-amber-400"
+                        : "bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600"
                     }`}
                   >
-                    {c.flag && <span className="mr-1">{c.flag}</span>}
-                    {c.name}
+                    <Film size={15} className="inline mr-2 -mt-0.5" />
+                    រឿងដុំ (Movie)
                   </button>
-                ))}
+                  <button
+                    type="button"
+                    onClick={() => setForm((prev) => ({ ...prev, content_type: "series" }))}
+                    className={`py-3 px-4 rounded-xl border text-sm font-medium transition-colors ${
+                      form.content_type === "series"
+                        ? "bg-amber-500/10 border-amber-500 text-amber-400"
+                        : "bg-slate-800 border-slate-700 text-slate-400 hover:border-slate-600"
+                    }`}
+                  >
+                    <Video size={15} className="inline mr-2 -mt-0.5" />
+                    រឿងភាគ (Series)
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
 
-          {/* Series Types for TV Show */}
-          {form.content_type === 'series' && (
-            <>
               <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1.5">
-                  ប្រភេទរឿងភាគ
-                </label>
-                {taxonomyLoading ? (
-                  <p className="text-xs text-slate-500">Loading series types…</p>
-                ) : seriesTypes.length === 0 ? (
-                  <p className="text-xs text-slate-500">មិនទាន់មានប្រភេទរឿងភាគទេ</p>
-                ) : (
-                  <div className="flex flex-wrap gap-1.5">
-                    {seriesTypes.map((st) => (
-                      <button
-                        key={st.id}
-                        type="button"
-                        onClick={() => toggleSeriesType(st.id)}
-                        className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                          seriesTypeIds.includes(st.id)
-                            ? "bg-amber-500 text-slate-950 border-amber-500"
-                            : "bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-600"
-                        }`}
-                      >
-                        {st.flag && <span className="mr-1">{st.flag}</span>}
-                        {st.name}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">
-                  ចំនួនភាគសរុប
-                </label>
+                <label className="block text-sm font-medium text-slate-300 mb-1">ចំណងជើង *</label>
                 <input
-                  type="number"
-                  name="total_episodes"
-                  value={form.total_episodes || ''}
+                  type="text"
+                  name="title"
+                  value={form.title}
+                  onChange={handleTitleChange}
+                  required
+                  className={`${inputClass} w-full`}
+                  placeholder="ឧទាហរណ៍៖ រឿងភាគ Empresses in the Palace"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">ការពិពណ៌នា *</label>
+                <textarea
+                  name="description"
+                  value={form.description}
                   onChange={handleChange}
-                  min="0"
-                  placeholder="ឧទាហរណ៍៖ 24"
+                  rows={4}
+                  required
+                  className={`${inputClass} w-full resize-none`}
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">ការពិពណ៌នាខ្លី</label>
+                <input
+                  type="text"
+                  name="short_description"
+                  value={form.short_description}
+                  onChange={handleChange}
+                  placeholder="ប្រយោគខ្លីមួយបង្ហាញនៅលើកាតបញ្ជី"
                   className={`${inputClass} w-full`}
                 />
               </div>
-            </>
-          )}
 
-          {/* Release date / duration / rating */}
-          <div className="grid grid-cols-3 gap-3">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Release date *</label>
-              <input
-                type="date"
-                name="release_date"
-                value={form.release_date}
-                required
-                onChange={handleChange}
-                className={`${inputClass} w-full`}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Duration (min) *</label>
-              <input
-                type="number"
-                name="duration"
-                min="0"
-                value={form.duration}
-                onChange={handleChange}
-                required
-                className={`${inputClass} w-full`}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Rating</label>
-              <input
-                type="number"
-                name="rating"
-                min="0"
-                max="10"
-                step="0.1"
-                value={form.rating}
-                onChange={handleChange}
-                className={`${inputClass} w-full`}
-              />
-            </div>
-          </div>
-
-          {/* Access type */}
-          <div className="space-y-3">
-            <div className="flex gap-4 flex-wrap">
-              <div className="flex-1 min-w-[140px]">
-                <label className="block text-sm font-medium text-slate-300 mb-1">
-                  ប្រភេទចូលប្រើ *
-                </label>
-                <select
-                  name="access_type"
-                  value={form.access_type}
-                  onChange={handleChange}
-                  className={`${inputClass} w-full`}
-                >
-                  <option value="free">ឥតគិតថ្លៃ (Free)</option>
-                  <option value="member">សមាជិក VIP (Member)</option>
-                  <option value="purchase">ទិញមើល (Pay Per View)</option>
-                </select>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">ប្រទេស (Text) *</label>
+                  <input
+                    type="text"
+                    name="country"
+                    value={form.country}
+                    onChange={handleChange}
+                    required
+                    placeholder="ឧទាហរណ៍៖ Cambodia"
+                    className={`${inputClass} w-full`}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">ភាសា *</label>
+                  <input
+                    type="text"
+                    name="language"
+                    value={form.language}
+                    onChange={handleChange}
+                    required
+                    placeholder="ឧទាហរណ៍៖ Khmer"
+                    className={`${inputClass} w-full`}
+                  />
+                </div>
               </div>
-              
-              {form.access_type === "purchase" && (
-                <div className="flex-1 min-w-[140px]">
-                  <label className="block text-sm font-medium text-slate-300 mb-1">
-                    តម្លៃទិញ *
-                  </label>
+
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">កាលបរិច្ឆេទចេញផ្សាយ *</label>
+                  <input
+                    type="date"
+                    name="release_date"
+                    value={form.release_date}
+                    required
+                    onChange={handleChange}
+                    className={`${inputClass} w-full`}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">រយៈពេល (នាទី) *</label>
                   <input
                     type="number"
-                    name="purchase_price"
+                    name="duration"
                     min="0"
-                    step="0.01"
-                    value={form.purchase_price}
+                    value={form.duration}
                     onChange={handleChange}
-                    placeholder="ឧទាហរណ៍៖ 2.99"
                     required
                     className={`${inputClass} w-full`}
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">ការវាយតម្លៃ</label>
+                  <input
+                    type="number"
+                    name="rating"
+                    min="0"
+                    max="10"
+                    step="0.1"
+                    value={form.rating}
+                    onChange={handleChange}
+                    className={`${inputClass} w-full`}
+                  />
+                </div>
+              </div>
+
+              {form.content_type === "series" && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1">ចំនួនភាគសរុប</label>
+                  <input
+                    type="number"
+                    name="total_episodes"
+                    value={form.total_episodes || ""}
+                    onChange={handleChange}
+                    min="0"
+                    placeholder="ឧទាហរណ៍៖ 24"
+                    className={`${inputClass} w-full max-w-xs`}
+                  />
+                </div>
               )}
-            </div>
-            
-            {form.access_type === "free" && (
-              <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 text-sm text-green-400">
-                អ្នកប្រើទាំងអស់អាចមើលបានដោយមិនចាំបាច់ចូលគណនី
-              </div>
-            )}
-            
-            {form.access_type === "member" && (
-              <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-sm text-amber-400">
-                មានតែសមាជិក VIP ប៉ុណ្ណោះដែលអាចមើលបាន
-              </div>
-            )}
-            
-            {form.access_type === "purchase" && (
-              <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 text-sm text-blue-400">
-                អ្នកប្រើត្រូវទិញមុនពេលមើល។ ចូលប្រើបាន 30 ថ្ងៃ
-              </div>
-            )}
-          </div>
+            </FormSection>
 
-          {/* Khmer Dub / Sub */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">
-              ភាសា និងសំឡេង
-            </label>
-            <div className="grid grid-cols-2 gap-3">
-              <ToggleSwitch
-                checked={form.has_khmer_dub}
-                onChange={(v) => setForm(prev => ({ ...prev, has_khmer_dub: v }))}
-                label="សំឡេងខ្មែរ"
-                description="មានសំឡេងនិយាយខ្មែរ"
-              />
-              <ToggleSwitch
-                checked={form.has_khmer_sub}
-                onChange={(v) => setForm(prev => ({ ...prev, has_khmer_sub: v }))}
-                label="អក្សររត់ខ្មែរ"
-                description="មានអក្សររត់ពីក្រោមខ្មែរ"
-              />
-            </div>
-          </div>
+            {/* ================= STEP 2: MEDIA ================= */}
+            <FormSection
+              id="media"
+              title="រូបភាព & Trailer"
+              description="Poster និង Backdrop លេចឡើងលើទំព័រកាតាឡុក, Trailer ជា​ស្រេចចិត្ត"
+            >
+              <div className="flex gap-4 flex-wrap sm:flex-nowrap">
+                <ImageDropBox
+                  preview={imagePreview}
+                  aspect="aspect-[2/3]"
+                  label={`Cover poster ${!isEdit ? "*" : ""}`}
+                  hint="សមាមាត្រ 2:3, ឧ. 800×1200។ អតិបរមា 5MB។"
+                  onFileSelect={(file) => handleImageSelect(file, "poster")}
+                />
+                <ImageDropBox
+                  preview={backdropPreview}
+                  aspect="aspect-video"
+                  label="Backdrop / Banner"
+                  hint="សមាមាត្រ 16:9, ឧ. 1600×900។ អតិបរមា 5MB។"
+                  onFileSelect={(file) => handleImageSelect(file, "backdrop")}
+                />
+              </div>
 
-          {/* Bunny Video ID */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">
-              Bunny Video ID <span className="text-yellow-400">(បញ្ចូលដោយផ្ទាល់)</span>
-            </label>
-            <input
-              type="text"
-              name="bunny_video_id"
-              value={form.bunny_video_id || ""}
-              onChange={handleChange}
-              placeholder="e.g. 123e4567-e89b-12d3-a456-426614174000"
-              className={`${inputClass} w-full font-mono text-sm`}
-            />
-          </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">Trailer URL</label>
+                <input
+                  type="url"
+                  name="trailer_url"
+                  value={form.trailer_url}
+                  onChange={handleChange}
+                  placeholder="https://youtube.com/watch?v=..."
+                  className={`${inputClass} w-full`}
+                />
+                <p className="text-[11px] text-slate-500 mt-1">YouTube ឬវីដេអូ trailer link (ស្រេចចិត្ត)</p>
+              </div>
+            </FormSection>
 
-          {/* Video file upload */}
-          {!form.bunny_video_id && (
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1.5">Movie video file</label>
-              {videoFile && videoPreview ? (
-                <div className="rounded-xl overflow-hidden border border-slate-700 bg-black">
-                  <video src={videoPreview} controls className="w-full max-h-72 bg-black" />
-                  <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-800/80">
-                    <span className="text-xs text-slate-300 truncate">
-                      {videoFile.name} · {formatBytes(videoFile.size)}
-                    </span>
-                    <button type="button" onClick={handleRemoveVideo} className="text-xs text-red-400 hover:text-red-300">
-                      លុប
-                    </button>
+            {/* ================= STEP 3: CLASSIFICATION ================= */}
+            <FormSection
+              id="classify"
+              title="ចំណាត់ថ្នាក់"
+              description="ជួយអ្នកប្រើស្វែងរក និងច្រោះមាតិកាបានត្រឹមត្រូវ"
+            >
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">Categories</label>
+                <PillMultiSelect
+                  items={categories}
+                  selectedIds={categoryIds}
+                  onToggle={toggleCategory}
+                  loading={taxonomyLoading}
+                  emptyLabel="មិនទាន់មាន category ទេ"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">Genres</label>
+                <PillMultiSelect
+                  items={genres}
+                  selectedIds={genreIds}
+                  onToggle={toggleGenre}
+                  loading={taxonomyLoading}
+                  emptyLabel="មិនទាន់មាន genre ទេ"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">
+                  ប្រទេស (អាចជ្រើសរើសច្រើន)
+                </label>
+                <PillMultiSelect
+                  items={countries}
+                  selectedIds={countryIds}
+                  onToggle={toggleCountry}
+                  loading={taxonomyLoading}
+                  emptyLabel="មិនទាន់មានប្រទេសទេ"
+                  renderExtra={(c) => c.flag && <span className="mr-1">{c.flag}</span>}
+                />
+              </div>
+
+              {form.content_type === "series" && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1.5">ប្រភេទរឿងភាគ</label>
+                  <PillMultiSelect
+                    items={seriesTypes}
+                    selectedIds={seriesTypeIds}
+                    onToggle={toggleSeriesType}
+                    loading={taxonomyLoading}
+                    emptyLabel="មិនទាន់មានប្រភេទរឿងភាគទេ"
+                    renderExtra={(st) => st.flag && <span className="mr-1">{st.flag}</span>}
+                  />
+                </div>
+              )}
+            </FormSection>
+
+            {/* ================= STEP 4: ACCESS & DISPLAY ================= */}
+            <FormSection
+              id="access"
+              title="សិទ្ធិចូលមើល & ជម្រើសបង្ហាញ"
+              description="កំណត់ថាអ្នកណាអាចមើលបាន និងកន្លែងបង្ហាញលើគេហទំព័រ"
+            >
+              <div className="space-y-3">
+                <div className="flex gap-4 flex-wrap">
+                  <div className="flex-1 min-w-[160px]">
+                    <label className="block text-sm font-medium text-slate-300 mb-1">ប្រភេទចូលប្រើ *</label>
+                    <select
+                      name="access_type"
+                      value={form.access_type}
+                      onChange={handleChange}
+                      className={`${inputClass} w-full`}
+                    >
+                      <option value="free">ឥតគិតថ្លៃ (Free)</option>
+                      <option value="member">សមាជិក VIP (Member)</option>
+                      <option value="purchase">ទិញមើល (Pay Per View)</option>
+                    </select>
                   </div>
+
+                  {form.access_type === "purchase" && (
+                    <div className="flex-1 min-w-[160px]">
+                      <label className="block text-sm font-medium text-slate-300 mb-1">តម្លៃទិញ *</label>
+                      <input
+                        type="number"
+                        name="purchase_price"
+                        min="0"
+                        step="0.01"
+                        value={form.purchase_price}
+                        onChange={handleChange}
+                        placeholder="ឧទាហរណ៍៖ 2.99"
+                        required
+                        className={`${inputClass} w-full`}
+                      />
+                    </div>
+                  )}
                 </div>
-              ) : (
-                <div
-                  onDragOver={(e) => e.preventDefault()}
-                  onDrop={handleVideoDrop}
-                  className="relative rounded-xl border-2 border-dashed border-slate-700 bg-slate-800/50 hover:border-slate-600 transition-colors"
-                >
-                  <label className="flex flex-col items-center justify-center gap-1.5 py-8 px-4 text-center cursor-pointer">
-                    <UploadCloud size={22} className="text-slate-500" />
-                    <span className="text-sm text-slate-400">
-                      <span className="text-amber-400 font-medium">ចុច</span> ឬទាញឯកសារវីដេអូមកដាក់
-                    </span>
-                    <span className="text-xs text-slate-600">MP4, MOV, MKV — អតិបរមា 50GB</span>
-                    <input type="file" accept="video/*" className="hidden" onChange={handleVideoInputChange} />
-                  </label>
+
+                {form.access_type === "free" && (
+                  <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-3 text-sm text-green-400">
+                    អ្នកប្រើទាំងអស់អាចមើលបានដោយមិនចាំបាច់ចូលគណនី
+                  </div>
+                )}
+                {form.access_type === "member" && (
+                  <div className="bg-amber-500/10 border border-amber-500/30 rounded-lg p-3 text-sm text-amber-400">
+                    មានតែសមាជិក VIP ប៉ុណ្ណោះដែលអាចមើលបាន
+                  </div>
+                )}
+                {form.access_type === "purchase" && (
+                  <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg p-3 text-sm text-blue-400">
+                    អ្នកប្រើត្រូវទិញមុនពេលមើល។ ចូលប្រើបាន 30 ថ្ងៃ
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">ភាសា និងសំឡេង</label>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  <ToggleSwitch
+                    checked={form.has_khmer_dub}
+                    onChange={(v) => setForm((prev) => ({ ...prev, has_khmer_dub: v }))}
+                    label="សំឡេងខ្មែរ"
+                    description="មានសំឡេងនិយាយខ្មែរ"
+                  />
+                  <ToggleSwitch
+                    checked={form.has_khmer_sub}
+                    onChange={(v) => setForm((prev) => ({ ...prev, has_khmer_sub: v }))}
+                    label="អក្សររត់ខ្មែរ"
+                    description="មានអក្សររត់ពីក្រោមខ្មែរ"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1.5">ជម្រើសបង្ហាញ</label>
+                <div className="grid sm:grid-cols-3 gap-2">
+                  <ToggleSwitch
+                    checked={form.is_featured}
+                    onChange={(v) => setForm((prev) => ({ ...prev, is_featured: v }))}
+                    label="Banner ទំព័រដើម"
+                  />
+                  <ToggleSwitch
+                    checked={form.is_new_release}
+                    onChange={(v) => setForm((prev) => ({ ...prev, is_new_release: v }))}
+                    label="ចេញថ្មី"
+                  />
+                  <ToggleSwitch
+                    checked={form.is_active}
+                    onChange={(v) => setForm((prev) => ({ ...prev, is_active: v }))}
+                    label="ដំណើរការ"
+                  />
+                </div>
+              </div>
+            </FormSection>
+
+            {/* ================= STEP 5: VIDEO ================= */}
+            <FormSection
+              id="video"
+              title="វីដេអូ"
+              description="ភ្ជាប់ Bunny Video ID ដោយផ្ទាល់ ឬបញ្ចូលឯកសារវីដេអូ"
+            >
+              <div>
+                <label className="block text-sm font-medium text-slate-300 mb-1">
+                  Bunny Video ID <span className="text-yellow-400">(បញ្ចូលដោយផ្ទាល់)</span>
+                </label>
+                <input
+                  type="text"
+                  name="bunny_video_id"
+                  value={form.bunny_video_id || ""}
+                  onChange={handleChange}
+                  placeholder="e.g. 123e4567-e89b-12d3-a456-426614174000"
+                  className={`${inputClass} w-full font-mono text-sm`}
+                />
+              </div>
+
+              {!form.bunny_video_id && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-300 mb-1.5">ឯកសារវីដេអូ</label>
+                  {videoFile && videoPreview ? (
+                    <div className="rounded-xl overflow-hidden border border-slate-700 bg-black">
+                      <video src={videoPreview} controls className="w-full max-h-72 bg-black" />
+                      <div className="flex items-center justify-between gap-3 px-3 py-2 bg-slate-800/80">
+                        <span className="text-xs text-slate-300 truncate">
+                          {videoFile.name} · {formatBytes(videoFile.size)}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={handleRemoveVideo}
+                          className="inline-flex items-center gap-1 text-xs text-red-400 hover:text-red-300"
+                        >
+                          <Trash2 size={12} /> លុប
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onDragOver={(e) => e.preventDefault()}
+                      onDrop={handleVideoDrop}
+                      className="relative rounded-xl border-2 border-dashed border-slate-700 bg-slate-800/50 hover:border-slate-600 transition-colors"
+                    >
+                      <label className="flex flex-col items-center justify-center gap-1.5 py-10 px-4 text-center cursor-pointer">
+                        <UploadCloud size={24} className="text-slate-500" />
+                        <span className="text-sm text-slate-400">
+                          <span className="text-amber-400 font-medium">ចុច</span> ឬទាញឯកសារវីដេអូមកដាក់
+                        </span>
+                        <span className="text-xs text-slate-600">MP4, MOV, MKV — អតិបរមា 50GB</span>
+                        <input type="file" accept="video/*" className="hidden" onChange={handleVideoInputChange} />
+                      </label>
+                    </div>
+                  )}
                 </div>
               )}
-            </div>
-          )}
+            </FormSection>
 
-          {/* Display options */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">ជម្រើសបង្ហាញ</label>
-            <div className="grid sm:grid-cols-3 gap-2">
-              <ToggleSwitch
-                checked={form.is_featured}
-                onChange={(v) => setForm((prev) => ({ ...prev, is_featured: v }))}
-                label="Banner ទំព័រដើម"
-              />
-              <ToggleSwitch
-                checked={form.is_new_release}
-                onChange={(v) => setForm((prev) => ({ ...prev, is_new_release: v }))}
-                label="ចេញថ្មី"
-              />
-              <ToggleSwitch
-                checked={form.is_active}
-                onChange={(v) => setForm((prev) => ({ ...prev, is_active: v }))}
-                label="ដំណើរការ"
-              />
-            </div>
-          </div>
-
-          {/* Categories */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Categories</label>
-            {taxonomyLoading ? (
-              <p className="text-xs text-slate-500">Loading…</p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {categories.map((c) => (
-                  <button
-                    key={c.id}
-                    type="button"
-                    onClick={() => toggleCategory(c.id)}
-                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                      categoryIds.includes(c.id)
-                        ? "bg-amber-500 text-slate-950 border-amber-500"
-                        : "bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-600"
-                    }`}
-                  >
-                    {c.name}
-                  </button>
-                ))}
+            {/* Error + progress + bottom submit (mirrors top bar, useful after long scroll) */}
+            {formError && (
+              <div className="flex items-start gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2.5">
+                <AlertCircle size={15} className="mt-0.5 shrink-0" />
+                <span className="break-words">{formError}</span>
               </div>
             )}
-          </div>
 
-          {/* Genres */}
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Genres</label>
-            {taxonomyLoading ? (
-              <p className="text-xs text-slate-500">Loading…</p>
-            ) : (
-              <div className="flex flex-wrap gap-1.5">
-                {genres.map((g) => (
-                  <button
-                    key={g.id}
-                    type="button"
-                    onClick={() => toggleGenre(g.id)}
-                    className={`text-xs px-2.5 py-1 rounded-full border transition-colors ${
-                      genreIds.includes(g.id)
-                        ? "bg-amber-500 text-slate-950 border-amber-500"
-                        : "bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-600"
-                    }`}
-                  >
-                    {g.name}
-                  </button>
-                ))}
+            {submitting && (
+              <div>
+                <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+                  <span>{submitStage === "video" ? "កំពុងផ្ទុកវីដេអូ…" : "កំពុងរក្សាទុក…"}</span>
+                  <span>{uploadProgress}%</span>
+                </div>
+                <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
+                  <div className="h-full bg-amber-500 transition-all" style={{ width: `${uploadProgress}%` }} />
+                </div>
               </div>
             )}
-          </div>
 
-          {formError && (
-            <div className="flex items-start gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
-              <AlertCircle size={15} className="mt-0.5 shrink-0" />
-              <span className="break-words">{formError}</span>
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-800 pb-10">
+              <button
+                type="button"
+                onClick={handleLeave}
+                disabled={submitting}
+                className="px-4 py-2 text-sm rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-50"
+              >
+                បោះបង់
+              </button>
+              <button
+                type="submit"
+                disabled={submitting}
+                className="inline-flex items-center gap-1.5 px-6 py-2.5 text-sm rounded-lg bg-amber-500 text-slate-950 font-medium hover:bg-amber-400 disabled:opacity-60"
+              >
+                {submitting && <Loader size={14} className="animate-spin" />}
+                {isEdit ? "រក្សាទុកការកែប្រែ" : "បង្កើតរឿង"}
+              </button>
             </div>
-          )}
-
-          {submitting && (
-            <div>
-              <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                <span>{submitStage === "video" ? "Uploading video…" : "Saving…"}</span>
-                <span>{uploadProgress}%</span>
-              </div>
-              <div className="h-1.5 rounded-full bg-slate-800 overflow-hidden">
-                <div className="h-full bg-amber-500 transition-all" style={{ width: `${uploadProgress}%` }} />
-              </div>
-            </div>
-          )}
-
-          <div className="flex justify-end gap-3 pt-4 border-t border-slate-800">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={submitting}
-              className="px-4 py-2 text-sm rounded-lg bg-slate-800 text-slate-300 hover:bg-slate-700 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={submitting}
-              className="inline-flex items-center gap-1.5 px-6 py-2.5 text-sm rounded-lg bg-amber-500 text-slate-950 font-medium hover:bg-amber-400 disabled:opacity-60"
-            >
-              {submitting && <Loader size={14} className="animate-spin" />}
-              {isEdit ? "Save Changes" : "Create Movie"}
-            </button>
-          </div>
-        </form>
+          </form>
+        </main>
       </div>
     </div>
   );

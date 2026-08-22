@@ -1,31 +1,47 @@
+# apps/taxonomy/serializers.py
 from rest_framework import serializers
-from .models import Genre, Country, Category, Cast, Crew, SeriesType  # ← បន្ថែម SeriesType import
+from .models import Genre, Country, Category, Cast, Crew, SeriesType
 
 
-class GenreSerializer(serializers.ModelSerializer):
+class UsageCountMixin(serializers.ModelSerializer):
+    """
+    Adds a read-only `movies_count` field to any taxonomy serializer whose
+    model has a `movies` related_name (Genre, Country, Category, SeriesType
+    all do — see apps/movies/models.py: Movie.genres/countries/categories/
+    series_types all use related_name='movies').
+
+    The frontend uses this to:
+      - show "used by N titles" next to each tag
+      - block delete when count > 0
+    """
+    movies_count = serializers.SerializerMethodField()
+
+    def get_movies_count(self, obj):
+        return obj.movies.count()
+
+
+class GenreSerializer(UsageCountMixin):
     class Meta:
         model = Genre
-        fields = ['id', 'name', 'slug']
+        fields = ['id', 'name', 'slug', 'movies_count']
 
 
-class CountrySerializer(serializers.ModelSerializer):
+class CountrySerializer(UsageCountMixin):
     class Meta:
         model = Country
-        fields = ['id', 'name', 'slug', 'flag']
+        fields = ['id', 'name', 'slug', 'flag', 'movies_count']
 
 
-class CategorySerializer(serializers.ModelSerializer):
+class CategorySerializer(UsageCountMixin):
     class Meta:
         model = Category
-        fields = ['id', 'name', 'slug']
+        fields = ['id', 'name', 'slug', 'movies_count']
 
 
-# ============ បន្ថែម SeriesTypeSerializer នៅទីនេះ ============
-class SeriesTypeSerializer(serializers.ModelSerializer):
+class SeriesTypeSerializer(UsageCountMixin):
     class Meta:
         model = SeriesType
-        fields = ['id', 'name', 'slug', 'flag']
-# ============ បញ្ចប់ការបន្ថែម ============
+        fields = ['id', 'name', 'slug', 'flag', 'movies_count']
 
 
 class CastSerializer(serializers.ModelSerializer):

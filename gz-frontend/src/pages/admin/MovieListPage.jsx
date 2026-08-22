@@ -1,6 +1,18 @@
 // src/pages/admin/MovieListPage.jsx
 import { useState, useEffect, useCallback, useMemo } from "react";
-import { Search, Plus, Pencil, Trash2, Star, Film, Loader, RefreshCw, Calendar, Eye } from "lucide-react";
+import {
+  Search,
+  Plus,
+  Pencil,
+  Trash2,
+  Star,
+  Film,
+  Loader,
+  RefreshCw,
+  Calendar,
+  Eye,
+  Clapperboard,
+} from "lucide-react";
 import SectionHeader from "../../components/common/SectionHeader";
 import Badge, { accessTone, statusTone } from "../../components/common/Badge";
 import IconBtn from "../../components/common/IconBtn";
@@ -9,9 +21,6 @@ import adminApi from "../../api/adminApi";
 import EpisodeManager from "../../features/admin/EpisodeManager";
 import AddMovieDrawer from "../../features/admin/AddMovieDrawer";
 import MovieDetailDrawer from "../../features/admin/MovieDetailDrawer";
-
-
-
 
 /* ============================================================
    Shared helpers
@@ -26,22 +35,22 @@ const accessDisplay = (type) => {
   return map[type] || type || "—";
 };
 
-const formatDate = (dateString) => {
-  if (!dateString) return "—";
-  const date = new Date(dateString);
-  if (isNaN(date.getTime())) return "—";
-  return date.toLocaleDateString('km-KH', {
-    year: 'numeric',
-    month: 'short',
-    day: 'numeric'
-  });
+const contentTypeDisplay = (type) => {
+  const map = {
+    movie: "រឿងដុំ",
+    series: "រឿងភាគ",
+    documentary: "Documentary",
+    anime: "Anime",
+  };
+  return map[type] || type || "—";
 };
 
-const inputClass = "bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 transition-all";
+const inputClass =
+  "bg-slate-800 text-slate-200 border border-slate-700 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/50 transition-all";
 const PAGE_SIZE = 10;
 
 /* ============================================================
-   Category badge helpers (deterministic color per name)
+   Badge helpers (deterministic color per name)
    ============================================================ */
 
 const CATEGORY_PALETTE = [
@@ -63,34 +72,40 @@ const hashString = (str) => {
   return Math.abs(hash);
 };
 
-  const paletteFor = (name) => CATEGORY_PALETTE[hashString(name) % CATEGORY_PALETTE.length];
+const paletteFor = (name) => CATEGORY_PALETTE[hashString(name) % CATEGORY_PALETTE.length];
 
-  // ✅ tone="category" ប្រើពណ៌ hash-based ចម្រុះ, tone="genre" ប្រើពណ៌ស្ងប់តែមួយ ដើម្បីមិនច្រឡំគ្នា
-  function CategoryBadges({ categories, max = 2, tone = "category" }) {
-    const names = Array.isArray(categories)
-      ? categories.map((c) => (c && typeof c === "object" ? c.name : c)).filter(Boolean)
-      : [];
+// tone="category" uses hash-based varied colors; tone="genre"/"neutral" use a single
+// calm color so different taxonomy columns stay visually distinct from each other.
+function CategoryBadges({ items, max = 2, tone = "category", flagKey = null }) {
+  const normalized = Array.isArray(items)
+    ? items
+        .map((c) => (c && typeof c === "object" ? { name: c.name, flag: flagKey ? c[flagKey] : null } : { name: c }))
+        .filter((c) => c.name)
+    : [];
 
-    if (names.length === 0) {
-      return <span className="text-slate-600 text-xs">—</span>;
-    }
+  if (normalized.length === 0) {
+    return <span className="text-slate-600 text-xs">—</span>;
+  }
 
-  const shown = names.slice(0, max);
-  const remaining = names.length - shown.length;
+  const shown = normalized.slice(0, max);
+  const remaining = normalized.length - shown.length;
 
   return (
     <div className="flex flex-wrap gap-1">
-      {shown.map((name) => (
-      <span
-        key={name}
-        className={`text-[11px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${
-          tone === "genre"
-            ? "bg-slate-700/40 text-slate-300 border-slate-600"
-            : paletteFor(name)
-        }`}
-      >
-        {name}
-      </span>
+      {shown.map((c) => (
+        <span
+          key={c.name}
+          className={`text-[11px] px-2 py-0.5 rounded-full border font-medium whitespace-nowrap ${
+            tone === "genre"
+              ? "bg-slate-700/40 text-slate-300 border-slate-600"
+              : tone === "neutral"
+              ? "bg-sky-500/10 text-sky-300 border-sky-500/25"
+              : paletteFor(c.name)
+          }`}
+        >
+          {c.flag && <span className="mr-1">{c.flag}</span>}
+          {c.name}
+        </span>
       ))}
       {remaining > 0 && (
         <span className="text-[11px] px-2 py-0.5 rounded-full border border-slate-700 text-slate-400">
@@ -132,16 +147,17 @@ export default function MovieListPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const [showEpisodes, setShowEpisodes] = useState(false);   
-  const [managingMovie, setManagingMovie] = useState(null); 
+  const [showEpisodes, setShowEpisodes] = useState(false);
+  const [managingMovie, setManagingMovie] = useState(null);
 
   const [query, setQuery] = useState("");
   const [accessFilter, setAccessFilter] = useState("");
+  const [contentTypeFilter, setContentTypeFilter] = useState("");
   const [ordering, setOrdering] = useState("-release_date");
   const [page, setPage] = useState(1);
   const [debouncedQuery, setDebouncedQuery] = useState("");
 
-  // Edit/Add drawer state
+  // Add/Edit full-page form state
   const [showForm, setShowForm] = useState(false);
   const [editingMovie, setEditingMovie] = useState(null);
 
@@ -164,6 +180,7 @@ export default function MovieListPage() {
       const params = { page, ordering };
       if (debouncedQuery.trim()) params.search = debouncedQuery.trim();
       if (accessFilter) params.access_type = accessFilter;
+      if (contentTypeFilter) params.content_type = contentTypeFilter;
 
       const res = await adminApi.getMovies(params);
       if (res.data && Array.isArray(res.data.results)) {
@@ -184,7 +201,7 @@ export default function MovieListPage() {
     } finally {
       setLoading(false);
     }
-  }, [debouncedQuery, accessFilter, ordering, page]);
+  }, [debouncedQuery, accessFilter, contentTypeFilter, ordering, page]);
 
   useEffect(() => {
     fetchMovies();
@@ -192,7 +209,7 @@ export default function MovieListPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [debouncedQuery, accessFilter]);
+  }, [debouncedQuery, accessFilter, contentTypeFilter]);
 
   const handleDelete = async (id) => {
     if (!window.confirm("លុបភាពយន្តនេះ? សកម្មភាពនេះមិនអាចត្រឡប់វិញបានទេ។")) return;
@@ -240,7 +257,6 @@ export default function MovieListPage() {
     setViewingMovie(null);
   };
 
-  // Jump straight from Detail view into Edit mode
   const handleDetailEdit = (movie) => {
     setShowDetail(false);
     setViewingMovie(null);
@@ -251,6 +267,19 @@ export default function MovieListPage() {
   const handleDetailDelete = (id) => {
     handleDetailClose();
     handleDelete(id);
+  };
+
+  // ---- Episode manager handlers (previously referenced but missing) ----
+  const handleManageEpisodes = (movie) => {
+    setManagingMovie(movie);
+    setShowEpisodes(true);
+  };
+
+  const handleEpisodesClose = () => {
+    setShowEpisodes(false);
+    setManagingMovie(null);
+    // episode counts may have changed — refresh the list
+    fetchMovies();
   };
 
   const totalPages = useMemo(() => Math.ceil(totalCount / PAGE_SIZE), [totalCount]);
@@ -309,6 +338,13 @@ export default function MovieListPage() {
             className={`${inputClass} pl-8 w-full`}
           />
         </div>
+        <select value={contentTypeFilter} onChange={(e) => setContentTypeFilter(e.target.value)} className={inputClass}>
+          <option value="">All Types</option>
+          <option value="movie">Movie</option>
+          <option value="series">Series</option>
+          <option value="documentary">Documentary</option>
+          <option value="anime">Anime</option>
+        </select>
         <select value={accessFilter} onChange={(e) => setAccessFilter(e.target.value)} className={inputClass}>
           <option value="">All Access</option>
           <option value="free">Free</option>
@@ -324,60 +360,89 @@ export default function MovieListPage() {
       </div>
 
       {/* Table */}
-      <Table
-        headers={["Title", "Category", "Genre", "Access", "Status", "Year", "Views", "Rating", ""]}
-        empty="No movies match your criteria."
-        rows={movies.map((m) => [
-          <div key={m.id} className="flex items-center gap-3">
-            <MoviePosterThumb src={m.poster} alt={m.title} />
-            <span className="font-medium text-slate-100">{m.title}</span>
-          </div>,
-          <CategoryBadges categories={m.categories} key={`cat-${m.id}`} />,
-            <CategoryBadges categories={m.genres} key={`gen-${m.id}`} />, 
-          <Badge tone={accessTone[m.access_type] || accessTone.free} key={`acc-${m.id}`}>
-            {accessDisplay(m.access_type)}
-          </Badge>,
-          <Badge tone={statusTone[m.is_active ? "Active" : "Inactive"] || statusTone.inactive} key={`stat-${m.id}`}>
-            {m.is_active ? "Active" : "Inactive"}
-          </Badge>,
-          <span className="flex items-center gap-1" key={`year-${m.id}`}>
-            <Calendar size={12} className="text-slate-500" />
-            {new Date(m.release_date).getFullYear() || "—"}
-          </span>,
-          <span className="flex items-center gap-1" key={`views-${m.id}`}>
-            <Eye size={12} className="text-slate-500" />
-            {m.view_count?.toLocaleString() || 0}
-          </span>,
-          <span className="flex items-center gap-1" key={`rate-${m.id}`}>
-            {m.rating && (
-              <>
-                <Star size={12} className="text-amber-400" />
-                {Number(m.rating).toFixed(1)}
-              </>
-            )}
-          </span>,
-          <div className="flex items-center gap-1.5" key={`act-${m.id}`}>
-            <button
-              onClick={() => handleViewClick(m)}
-              title="មើលលម្អិត"
-              className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
-            >
-              <i className="bi bi-eye-fill" style={{ fontSize: 14 }} />
-            </button>
-            {m.content_type === 'series' && (
+      <div className="overflow-x-auto">
+        <Table
+          headers={[
+            "Title",
+            "Type",
+            "Category",
+            "Genre",
+            "Country",
+            "Series Type",
+            "Access",
+            "Status",
+            "Year",
+            "Views",
+            "Rating",
+            "",
+          ]}
+          empty="No movies match your criteria."
+          rows={movies.map((m) => [
+            <div key={m.id} className="flex items-center gap-3">
+              <MoviePosterThumb src={m.poster_url || m.poster} alt={m.title} />
+              <div className="min-w-0">
+                <div className="font-medium text-slate-100 truncate max-w-[180px]">{m.title}</div>
+                {m.content_type === "series" && (
+                  <div className="text-[11px] text-slate-500">
+                    {m.episode_count ?? 0}/{m.total_episodes || "?"} ភាគ
+                  </div>
+                )}
+              </div>
+            </div>,
+            <span key={`type-${m.id}`} className="text-xs text-slate-400 whitespace-nowrap">
+              {contentTypeDisplay(m.content_type)}
+            </span>,
+            <CategoryBadges items={m.categories} tone="category" key={`cat-${m.id}`} />,
+            <CategoryBadges items={m.genres} tone="genre" key={`gen-${m.id}`} />,
+            <CategoryBadges items={m.countries} tone="neutral" flagKey="flag" key={`country-${m.id}`} />,
+            <CategoryBadges items={m.series_types} tone="category" flagKey="flag" key={`st-${m.id}`} />,
+            <Badge tone={accessTone[m.access_type] || accessTone.free} key={`acc-${m.id}`}>
+              {accessDisplay(m.access_type)}
+            </Badge>,
+            <Badge tone={statusTone[m.is_active ? "Active" : "Inactive"] || statusTone.inactive} key={`stat-${m.id}`}>
+              {m.is_active ? "Active" : "Inactive"}
+            </Badge>,
+            <span className="flex items-center gap-1 whitespace-nowrap" key={`year-${m.id}`}>
+              <Calendar size={12} className="text-slate-500" />
+              {m.release_date ? new Date(m.release_date).getFullYear() : "—"}
+            </span>,
+            <span className="flex items-center gap-1 whitespace-nowrap" key={`views-${m.id}`}>
+              <Eye size={12} className="text-slate-500" />
+              {m.view_count?.toLocaleString() || 0}
+            </span>,
+            <span className="flex items-center gap-1 whitespace-nowrap" key={`rate-${m.id}`}>
+              {m.rating ? (
+                <>
+                  <Star size={12} className="text-amber-400" />
+                  {Number(m.rating).toFixed(1)}
+                </>
+              ) : (
+                <span className="text-slate-600">—</span>
+              )}
+            </span>,
+            <div className="flex items-center gap-1.5" key={`act-${m.id}`}>
               <button
-                onClick={() => handleManageEpisodes(m)}
-                title="គ្រប់គ្រងភាគ"
-                className="p-1.5 rounded-lg text-slate-400 hover:text-sky-400 hover:bg-slate-800 transition-colors"
+                onClick={() => handleViewClick(m)}
+                title="មើលលម្អិត"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors"
               >
-                <Clapperboard size={14} />
+                <i className="bi bi-eye-fill" style={{ fontSize: 14 }} />
               </button>
-            )}
-            <IconBtn icon={Pencil} title="Edit" onClick={() => handleEditClick(m)} />
-            <IconBtn icon={Trash2} tone="crimson" title="Delete" onClick={() => handleDelete(m.id)} />
-          </div>,
-        ])}
-      />
+              {m.content_type === "series" && (
+                <button
+                  onClick={() => handleManageEpisodes(m)}
+                  title="គ្រប់គ្រងភាគ"
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-sky-400 hover:bg-slate-800 transition-colors"
+                >
+                  <Clapperboard size={14} />
+                </button>
+              )}
+              <IconBtn icon={Pencil} title="Edit" onClick={() => handleEditClick(m)} />
+              <IconBtn icon={Trash2} tone="crimson" title="Delete" onClick={() => handleDelete(m.id)} />
+            </div>,
+          ])}
+        />
+      </div>
 
       {/* Pagination */}
       {totalPages > 1 && (
@@ -406,11 +471,7 @@ export default function MovieListPage() {
 
       {/* Add / Edit Movie Drawer */}
       {showForm && (
-        <AddMovieDrawer
-          movie={editingMovie}
-          onClose={handleFormCancel}
-          onSave={handleFormSave}
-        />
+        <AddMovieDrawer movie={editingMovie} onClose={handleFormCancel} onSave={handleFormSave} />
       )}
 
       {/* Detail (read-only) Drawer */}
@@ -422,12 +483,10 @@ export default function MovieListPage() {
           onDelete={handleDetailDelete}
         />
       )}
+
       {showEpisodes && managingMovie && (
-      <EpisodeManager
-        movie={managingMovie}
-        onClose={handleEpisodesClose}
-      />
-    )}
+        <EpisodeManager movie={managingMovie} onClose={handleEpisodesClose} />
+      )}
     </>
   );
 }
